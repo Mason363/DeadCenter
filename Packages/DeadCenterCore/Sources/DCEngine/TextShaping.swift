@@ -135,7 +135,10 @@ public enum TextShaping {
             }
             end -= 1
         }
-        let hasCore = end >= start && chars[start...end].contains { $0.isLetter || $0.isNumber }
+        // Anything that isn't a bracket, quote or punctuation counts: letters, numbers, emoji, symbols.
+        let hasCore = end >= start && chars[start...end].contains {
+            !$0.isWhitespace && openers[$0] == nil && !closers.contains($0) && !trailingPunctuation.contains($0)
+        }
         return EnclosureShape(openers: opened, closers: closed, hasCore: hasCore)
     }
 
@@ -165,7 +168,43 @@ public enum TextShaping {
     }
 }
 
+extension TextShaping {
+    /// Marks that wrap a word without being part of it: brackets, quotes and dashes.
+    private static let wrappers: Set<Character> = Set(openers.keys).union(closers)
+        .union(["—", "–", "‒", "―", "⸺", "⸻", "'", "`", "´", "‚", "‛", "‟"])
+    private static let sentencePunctuation: Set<Character> = Set(".,;:!?…")
+
+    /// The word without the brackets, quotes and dashes around it, which slow down taking it in at a
+    /// glance. Sentence punctuation and anything inside the word ("well-known", "don't") stay.
+    public static func bareWord(_ text: String) -> String {
+        let chars = Array(text)
+        var start = 0
+        while start < chars.count, wrappers.contains(chars[start]) || chars[start].isWhitespace { start += 1 }
+        var end = chars.count
+        var tail: [Character] = []
+        while end > start {
+            let c = chars[end - 1]
+            if wrappers.contains(c) || c.isWhitespace {
+                end -= 1
+            } else if sentencePunctuation.contains(c) {
+                tail.insert(c, at: 0)
+                end -= 1
+            } else {
+                break
+            }
+        }
+        // Nothing but marks ("—", "…"): show it as it is.
+        guard end > start else { return text }
+        return String(chars[start..<end] + tail)
+    }
+}
+
 extension ReadingItem {
+    /// What the focus view shows with bare words on: no brackets, quotes or dashes around it.
+    public var bareText: String {
+        TextShaping.bareWord(text)
+    }
+
     /// What the focus view shows: the word without its enclosure's marks.
     public var focusText: String {
         TextShaping.focusText(text, enclosure: enclosure)

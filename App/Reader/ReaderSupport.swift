@@ -8,12 +8,20 @@ import DCEngine
 final class ImageLoader {
     private var cache: [Int: CGImage] = [:]
     private var loading: Set<Int> = []
+    /// Images that couldn't be fetched or decoded; not retried until the next reset.
+    private var failed: Set<Int> = []
     private var waiters: [Int: [(CGImage?) -> Void]] = [:]
     private var generation = 0
+    private let maxPixelSize: Int
+
+    init(maxPixelSize: Int = 2800) {
+        self.maxPixelSize = maxPixelSize
+    }
 
     func reset() {
         cache = [:]
         loading = []
+        failed = []
         waiters = [:]
         generation += 1
     }
@@ -22,17 +30,21 @@ final class ImageLoader {
 
     func load(_ asset: ImageAsset, index: Int, completion: @escaping (CGImage?) -> Void) {
         if let image = cache[index] { return completion(image) }
+        if failed.contains(index) { return completion(nil) }
         waiters[index, default: []].append(completion)
         guard !loading.contains(index) else { return }
         loading.insert(index)
         let generation = generation
+        let size = maxPixelSize
         Task {
-            let image = await Self.decode(asset).map(\.image)
+            let image = await Self.decode(asset, maxPixelSize: size).map(\.image)
             guard generation == self.generation else { return }
             loading.remove(index)
             if let image {
                 cache[index] = image
                 trim(around: index)
+            } else {
+                failed.insert(index)
             }
             waiters.removeValue(forKey: index)?.forEach { $0(image) }
         }
@@ -47,7 +59,7 @@ final class ImageLoader {
         while i < end, found < 3 {
             if let asset = stream[i].image {
                 found += 1
-                if cache[i] == nil, !loading.contains(i) { load(asset, index: i) { _ in } }
+                if cache[i] == nil, !loading.contains(i), !failed.contains(i) { load(asset, index: i) { _ in } }
             }
             i += 1
         }
@@ -63,7 +75,7 @@ final class ImageLoader {
     struct Decoded: @unchecked Sendable { let image: CGImage }
 
     @concurrent
-    nonisolated static func decode(_ asset: ImageAsset) async -> Decoded? {
+    nonisolated static func decode(_ asset: ImageAsset, maxPixelSize: Int) async -> Decoded? {
         let data: Data?
         switch asset.source {
         case .data(let d):
@@ -79,7 +91,7 @@ final class ImageLoader {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 2800,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary).map(Decoded.init)
     }

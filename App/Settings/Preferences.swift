@@ -1,6 +1,12 @@
 import AppKit
 import Observation
 
+/// Focus: one word at a time at the center. Page: the text as paragraphs, the current word lit in red.
+enum ReadingMode: String, CaseIterable, Identifiable {
+    case focus, page
+    var id: Self { self }
+}
+
 enum PivotMode: String, CaseIterable, Identifiable {
     case optimal, middle
     var id: Self { self }
@@ -86,7 +92,10 @@ final class Preferences {
 
     // Reading
     var wpm: Int { didSet { defaults.set(wpm, forKey: Key.wpm) } }
+    var readingMode: ReadingMode { didSet { defaults.set(readingMode.rawValue, forKey: Key.readingMode) } }
     var pivotMode: PivotMode { didSet { defaults.set(pivotMode.rawValue, forKey: Key.pivotMode) } }
+    /// Show words without the brackets, quotes and dashes around them.
+    var bareWords: Bool { didSet { defaults.set(bareWords, forKey: Key.bareWords) } }
     var pacing: Pacing { didSet { defaults.set(pacing.rawValue, forKey: Key.pacing) } }
     /// Adapt speed to the text: denser passages and harder documents read slower, easy ones faster.
     var adaptiveSpeed: Bool { didSet { defaults.set(adaptiveSpeed, forKey: Key.adaptiveSpeed) } }
@@ -94,6 +103,8 @@ final class Preferences {
     var resumeAtSentence: Bool { didSet { defaults.set(resumeAtSentence, forKey: Key.resumeAtSentence) } }
     var autoStart: Bool { didSet { defaults.set(autoStart, forKey: Key.autoStart) } }
     var showImages: Bool { didSet { defaults.set(showImages, forKey: Key.showImages) } }
+    /// Opt-in: photos and scans of pages are straightened, put in column order, and keep their figures.
+    var pageScanning: Bool { didSet { defaults.set(pageScanning, forKey: Key.pageScanning) } }
     /// Seconds an image beat stays up. 0 means "until I continue".
     var imageDuration: Double { didSet { defaults.set(imageDuration, forKey: Key.imageDuration) } }
 
@@ -127,13 +138,16 @@ final class Preferences {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.wpm: 350,
+            Key.readingMode: ReadingMode.focus.rawValue,
             Key.pivotMode: PivotMode.optimal.rawValue,
+            Key.bareWords: true,
             Key.pacing: Pacing.natural.rawValue,
             Key.adaptiveSpeed: false,
             Key.easeIn: true,
             Key.resumeAtSentence: true,
             Key.autoStart: true,
             Key.showImages: true,
+            Key.pageScanning: false,
             Key.imageDuration: 10.0,
             Key.appearance: AppearanceMode.dark.rawValue,
             Key.customBackground: "#000000",
@@ -151,13 +165,16 @@ final class Preferences {
             Key.onboarded: false,
         ])
         wpm = defaults.integer(forKey: Key.wpm)
+        readingMode = ReadingMode(rawValue: defaults.string(forKey: Key.readingMode) ?? "") ?? .focus
         pivotMode = PivotMode(rawValue: defaults.string(forKey: Key.pivotMode) ?? "") ?? .optimal
+        bareWords = defaults.bool(forKey: Key.bareWords)
         pacing = Pacing(rawValue: defaults.string(forKey: Key.pacing) ?? "") ?? .natural
         adaptiveSpeed = defaults.bool(forKey: Key.adaptiveSpeed)
         easeIn = defaults.bool(forKey: Key.easeIn)
         resumeAtSentence = defaults.bool(forKey: Key.resumeAtSentence)
         autoStart = defaults.bool(forKey: Key.autoStart)
         showImages = defaults.bool(forKey: Key.showImages)
+        pageScanning = defaults.bool(forKey: Key.pageScanning)
         imageDuration = defaults.double(forKey: Key.imageDuration)
         appearance = AppearanceMode(rawValue: defaults.string(forKey: Key.appearance) ?? "") ?? .dark
         customBackgroundHex = defaults.string(forKey: Key.customBackground) ?? "#000000"
@@ -215,13 +232,16 @@ final class Preferences {
 
     private enum Key {
         static let wpm = "wpm"
+        static let readingMode = "readingMode"
         static let pivotMode = "pivotMode"
+        static let bareWords = "bareWords"
         static let pacing = "pacing"
         static let adaptiveSpeed = "adaptiveSpeed"
         static let easeIn = "easeIn"
         static let resumeAtSentence = "resumeAtSentence"
         static let autoStart = "autoStart"
         static let showImages = "showImages"
+        static let pageScanning = "pageScanning"
         static let imageDuration = "imageDuration"
         static let appearance = "appearance"
         static let customBackground = "customBackground"

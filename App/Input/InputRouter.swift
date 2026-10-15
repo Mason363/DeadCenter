@@ -94,12 +94,12 @@ final class InputRouter {
                     if coordinator.session !== waiting { return }
                 }
             }
-            if let url = browsers.frontTabURL(of: front) {
+            if let url = await browsers.frontTabURL(of: front) {
                 return coordinator.read(.web(url))
             }
         }
 
-        if let document = SelectionGrabber.documentURL(in: front) {
+        if let document = await SelectionGrabber.documentURL(in: front) {
             return coordinator.open([document])
         }
 

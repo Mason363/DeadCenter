@@ -161,7 +161,14 @@ final class ReadingCoordinator {
     }
 
     func saveProgress() {
-        guard let session, request != nil, !session.stream.isEmpty else { return }
+        guard let session, request != nil else { return }
+        // Something that turned out to have nothing to read doesn't belong in the library.
+        if case .failed = session.state, session.stream.isEmpty {
+            library.remove(id: session.id)
+            request = nil
+            return
+        }
+        guard !session.stream.isEmpty else { return }
         library.updateProgress(id: session.id, title: session.title, position: session.index,
                                itemCount: session.stream.count, finished: session.state == .finished,
                                wordCount: session.isIngesting ? nil : session.stream.wordCount,

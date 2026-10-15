@@ -10,6 +10,8 @@ protocol ReaderViewHost: AnyObject {
     func readerViewRequestsFullScreen(_ view: ReaderView)
     func readerView(_ view: ReaderView, requestsSize preset: WindowSizePreset)
     func readerView(_ view: ReaderView, imageBeatActive active: Bool)
+    /// The reader switched between focus and page mode; each keeps its own window size.
+    func readerView(_ view: ReaderView, didSwitchTo mode: ReadingMode)
 }
 
 /// The reading surface. Renders with Core Text into layers, drives playback from the display link,
@@ -46,6 +48,8 @@ final class ReaderView: NSView, ReaderSessionDelegate {
     private var timelineActive = false
     private var timelineDragging = false
     private var pageView: PageView?
+    /// The reading mode the view last arranged itself for.
+    private var appliedMode: ReadingMode?
     private var pageGeneration = -1
     private var findBar: FindBar?
     private var bar: NSHostingView<ReaderChrome>?
@@ -54,6 +58,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
     private var controlsHideWork: DispatchWorkItem?
     private var lastTimeTextUpdate: CFTimeInterval = 0
     private var closeButton: NSHostingView<CloseButton>?
+    private var lastClickToggledPlayback = false
     #if DEBUG
     private var pinCloseForDebug = false
     #endif
@@ -178,7 +183,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
             _ = prefs.customBackgroundHex; _ = prefs.customTextHex; _ = prefs.customPivotHex
             _ = prefs.fontFamily; _ = prefs.fontWeight; _ = prefs.textScale; _ = prefs.boldPivot
             _ = prefs.showGuides; _ = prefs.progressVisibility; _ = prefs.material
-            _ = prefs.showImages; _ = prefs.imageDuration
+            _ = prefs.showImages; _ = prefs.imageDuration; _ = prefs.bareWords; _ = prefs.readingMode
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 self?.preferencesChanged()
@@ -192,6 +197,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
         remaining = nil
         refreshStyle()
         renderAll()
+        applyReadingMode()
     }
 
     // MARK: - View lifecycle
@@ -343,6 +349,9 @@ final class ReaderView: NSView, ReaderSessionDelegate {
     private func sessionReplaced() {
         barModel.session = session
         updateTimeText(force: true)
+        // The previous reading's image (and any window growth for it) must not carry over.
+        hideImage()
+        host?.readerView(self, imageBeatActive: false)
         images.reset()
         shownImageIndex = nil
         shownImage = nil
@@ -356,6 +365,16 @@ final class ReaderView: NSView, ReaderSessionDelegate {
         renderAll()
         if session?.state == .paused { showRibbon(animated: false) }
         updateDisplayLink()
+        if let page = pageView, let session {
+            // A new reading: the page starts over (an unfinished edit belonged to the old one).
+            if page.isEditing { _ = page.endEditing() }
+            pageGeneration = session.contentGeneration
+            page.load(session.stream, reset: true)
+            page.highlight(session.index, scroll: true)
+            page.isPlaying = session.state == .playing
+        page.setPlaceholder(session.state == .loading && session.stream.count == 0 ? "Loading…" : nil)
+        }
+        applyReadingMode(force: true)
     }
 
     func session(_ session: ReaderSession, didChange change: ReaderSession.Change) {
@@ -377,6 +396,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
             renderAll()
             images.preload(session.stream, from: session.index)
             syncPage()
+            if session.stream.count > 0 { pageView?.setPlaceholder(nil) }
             updateTimeText(force: true)
         }
     }
@@ -388,15 +408,20 @@ final class ReaderView: NSView, ReaderSessionDelegate {
         case .playing:
             hideRibbon(animated: true)
             hideHelp()
+            pageView?.isPlaying = true
             if !isPreview, let window, window.isKeyWindow,
                bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
                 NSCursor.setHiddenUntilMouseMoves(true)
             }
         case .paused, .finished:
+            pageView?.isPlaying = false
             if session.currentItem?.kind == .word { showRibbon(animated: true) }
         case .loading, .failed:
             hideRibbon(animated: false)
+            // A message (nothing to read, a failed load) shows in the focus view, not on an empty page.
+            if case .failed = session.state, pageView != nil { closePage() }
         }
+        pageView?.setPlaceholder(session.state == .loading && session.stream.count == 0 ? "Loading…" : nil)
         updateTimeText(force: true)
         setControls(visible: session.state != .playing)
         renderAll()
@@ -414,15 +439,16 @@ final class ReaderView: NSView, ReaderSessionDelegate {
         CATransaction.commit()
     }
 
-    /// The word as the focus view shows it, plus the marks of the aside or quote it sits in.
+    /// The word as the focus view shows it: bare, or with the marks of the aside or quote it sits in.
     private func typeset(_ item: ReadingItem) -> (word: TypesetWord, marks: WordLayer.Marks?) {
-        let text = item.focusText
+        let bare = prefs.bareWords && item.kind == .word
+        let text = bare ? item.bareText : item.focusText
         let pivot = Pivot.index(in: text, rule: prefs.pivotMode == .optimal ? .optimal : .middle)
         var wordStyle = style
         var word = Typesetter.typeset(text, pivot: pivot, style: wordStyle)
 
         var markPair: (open: String, close: String)?
-        if let enclosure = item.enclosure { markPair = TextShaping.marks(for: enclosure) }
+        if !bare, let enclosure = item.enclosure { markPair = TextShaping.marks(for: enclosure) }
         func makeMarks(_ s: WordStyle) -> WordLayer.Marks? {
             guard let markPair else { return nil }
             let dim = palette.text.withAlphaComponent(0.3)
@@ -612,7 +638,11 @@ final class ReaderView: NSView, ReaderSessionDelegate {
         let reach = bounds.width * 1.5
 
         func entry(_ i: Int, pivotX: (TypesetWord) -> CGFloat) -> RibbonLayer.Entry {
-            let text = stream[i].text
+            // A word split for reading shows whole here, without the hyphen added at the split.
+            let item = stream[i]
+            let next = i + 1 < stream.count ? stream[i + 1] : nil
+            let joined = item.addedHyphen && next.map { $0.kind == .word && !$0.spaceBefore && $0.paragraph == item.paragraph } == true
+            let text = joined ? item.sourceText : item.text
             let pivot = Pivot.index(in: text, rule: rule)
             let word = Typesetter.typeset(text, pivot: pivot, style: style, textColor: dim, highlight: false)
             return RibbonLayer.Entry(index: i, text: text, pivot: pivot, word: word, pivotX: pivotX(word))
@@ -881,10 +911,10 @@ final class ReaderView: NSView, ReaderSessionDelegate {
 
     private func hideImage() {
         countdownLayer.isHidden = true
-        guard shownImageIndex != nil else { return }
+        let wasShowing = shownImageIndex != nil
         shownImageIndex = nil
         shownImage = nil
-        host?.readerView(self, imageBeatActive: false)
+        if wasShowing { host?.readerView(self, imageBeatActive: false) }
         guard !imageLayer.isHidden else { return }
         let snapshot = StillLayer()
         snapshot.contents = imageLayer.contents
@@ -1003,7 +1033,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = reduceMotion ? 0 : 0.15
             view.animator().alphaValue = 0
-        }, completionHandler: { view.removeFromSuperview() })
+        }, completionHandler: { MainActor.assumeIsolated { view.removeFromSuperview() } })
     }
 
     // MARK: - Keyboard
@@ -1029,7 +1059,8 @@ final class ReaderView: NSView, ReaderSessionDelegate {
     private func escape() {
         if findBar != nil { return closeFind() }
         if helpView != nil { return hideHelp() }
-        if pageView != nil { return closePage() }
+        // Page mode is a way of reading, not a panel: Esc only leaves a page opened for editing.
+        if pageView != nil, prefs.readingMode == .focus { return closePage() }
         if host?.isFullScreen == true { return toggleFullScreen() }
         host?.readerViewRequestsClose(self)
     }
@@ -1078,7 +1109,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
             case "\r":
                 if pageView?.isEditing == true {
                     finishEditing()
-                    closePage()
+                    if prefs.readingMode == .focus { closePage() }
                     session?.play()
                 } else {
                     return false
@@ -1158,8 +1189,9 @@ final class ReaderView: NSView, ReaderSessionDelegate {
         }
         guard let window else { return }
         if event.clickCount == 2 {
-            // The first click already toggled playback; undo it and go full screen.
-            session?.togglePlayback()
+            // Undo what the first click did to playback (if anything), then go full screen.
+            if lastClickToggledPlayback { session?.togglePlayback() }
+            lastClickToggledPlayback = false
             toggleFullScreen()
             return
         }
@@ -1179,6 +1211,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
     }
 
     private func click(at point: CGPoint) {
+        lastClickToggledPlayback = false
         guard let session else { return }
         if helpView != nil { return hideHelp() }
         if session.isHoldingImage { return session.continueFromHold() }
@@ -1188,6 +1221,7 @@ final class ReaderView: NSView, ReaderSessionDelegate {
             return
         }
         session.togglePlayback()
+        lastClickToggledPlayback = true
     }
 }
 
@@ -1239,7 +1273,9 @@ extension ReaderView {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             button.animator().alphaValue = visible ? 1 : 0
         }, completionHandler: {
-            if button.alphaValue == 0 { button.isHidden = true }
+            MainActor.assumeIsolated {
+                if button.alphaValue == 0 { button.isHidden = true }
+            }
         })
     }
 
@@ -1258,6 +1294,7 @@ extension ReaderView {
         }
         barModel.onHover = { [weak self] fraction in self?.showTimelinePreview(fraction) }
         barModel.onSpeedChange = { [weak self] delta in self?.changeSpeed(by: delta) }
+        barModel.onModeChange = { [weak self] mode in self?.setReadingMode(mode) }
         let view = NSHostingView(rootView: ReaderChrome(model: barModel))
         view.safeAreaRegions = []
         view.frame = NSRect(x: 0, y: 0, width: bounds.width, height: Self.barHeight)
@@ -1309,8 +1346,10 @@ extension ReaderView {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             bar.animator().alphaValue = visible ? 1 : 0
         }, completionHandler: { [weak self] in
-            guard let self, !self.controlsVisible else { return }
-            bar.isHidden = true
+            MainActor.assumeIsolated {
+                guard let self, !self.controlsVisible else { return }
+                bar.isHidden = true
+            }
         })
         if !visible { showTimelinePreview(nil) }
         CATransaction.begin()
@@ -1418,7 +1457,8 @@ extension ReaderView {
         speedItem.submenu = speed
         menu.addItem(speedItem)
 
-        add("Page View", key: "\t", checked: pageView != nil) { [weak self] in self?.togglePage() }
+        add("Focus", key: "", checked: prefs.readingMode == .focus) { [weak self] in self?.setReadingMode(.focus) }
+        add("Page", key: "\t", checked: prefs.readingMode == .page) { [weak self] in self?.setReadingMode(.page) }
         add("Find…", key: "f", modifiers: .command) { [weak self] in self?.showFind() }
         add("Edit Text", key: "e", modifiers: .command, enabled: session.isEditable) { [weak self] in self?.toggleEditing() }
         add("Copy Sentence", key: "c", modifiers: .command) { [weak self] in self?.copy(nil) }
@@ -1482,7 +1522,32 @@ extension ReaderView {
     }
 
     func togglePage() {
-        if pageView == nil { openPage(editing: false) } else { closePage() }
+        setReadingMode(prefs.readingMode == .page ? .focus : .page)
+    }
+
+    func setReadingMode(_ mode: ReadingMode) {
+        guard !isPreview else { return }
+        if prefs.readingMode != mode { prefs.readingMode = mode }
+        applyReadingMode()
+    }
+
+    /// Opens or closes the page to match the reading mode, when the mode changed (or `force`).
+    private func applyReadingMode(force: Bool = false) {
+        guard !isPreview, session != nil else { return }
+        let mode = prefs.readingMode
+        guard force || mode != appliedMode else { return }
+        let switched = appliedMode != nil && appliedMode != mode
+        appliedMode = mode
+        switch mode {
+        case .page:
+            let failed = if case .failed = session?.state { true } else { false }
+            if pageView == nil, !failed { openPage(editing: false) }
+        case .focus: if pageView != nil { closePage() }
+        }
+        if switched {
+            host?.readerView(self, didSwitchTo: mode)
+            flash(mode == .page ? "Page" : "Focus")
+        }
     }
 
     func openPage(editing: Bool) {
@@ -1499,6 +1564,7 @@ extension ReaderView {
         page.load(session.stream, reset: true)
         pageGeneration = session.contentGeneration
         page.onSelectItem = { [weak self] index in self?.session?.seek(to: index) }
+        page.isPlaying = session.state == .playing
         page.keyHandler = { [weak self] event in self?.handlePageKey(event) ?? false }
         page.alphaValue = 0
         if let bar { addSubview(page, positioned: .below, relativeTo: bar) }
@@ -1526,7 +1592,7 @@ extension ReaderView {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = reduceMotion ? 0 : 0.18
             page.animator().alphaValue = 0
-        }, completionHandler: { page.removeFromSuperview() })
+        }, completionHandler: { MainActor.assumeIsolated { page.removeFromSuperview() } })
         window?.makeFirstResponder(self)
         renderAll()
     }
@@ -1551,7 +1617,7 @@ extension ReaderView {
             }
             if command, chars == "\r" {
                 finishEditing()
-                closePage()
+                if prefs.readingMode == .focus { closePage() }
                 session?.play()
                 return true
             }
@@ -1569,6 +1635,11 @@ extension ReaderView {
         if let page = pageView, page.isEditing {
             finishEditing()
         } else {
+            // Editing a half-loaded document would replace it with the part loaded so far.
+            guard !session.isIngesting else {
+                flash("Still loading…")
+                return
+            }
             session.pause()
             openPage(editing: true)
         }
@@ -1577,7 +1648,11 @@ extension ReaderView {
     private func finishEditing() {
         guard let page = pageView, page.isEditing else { return }
         let result = page.endEditing()
-        ReadingCoordinator.shared.applyEdit(text: result.text, atWord: result.wordsBeforeCaret)
+        if result.changed {
+            ReadingCoordinator.shared.applyEdit(text: result.text, atWord: result.wordsBeforeCaret)
+        } else if let target = session?.stream.itemIndex(forWord: result.wordsBeforeCaret) {
+            session?.seek(to: target)
+        }
         syncPage()
         window?.makeFirstResponder(self)
     }
@@ -1612,6 +1687,14 @@ extension ReaderView {
     func debugShowClose() {
         pinCloseForDebug = true
         setCloseButton(visible: true)
+    }
+    func debugPageScroll(_ fraction: CGFloat, location: Int?) -> String {
+        if let location { pageView?.debugScroll(toCharacter: location) } else { pageView?.debugScroll(to: fraction) }
+        return pageView?.debugPendingImages ?? "-"
+    }
+    var debugPageState: String { pageView?.debugPendingImages ?? "no page" }
+    var debugLinkState: String {
+        "link=\(link == nil ? "nil" : (link!.isPaused ? "paused" : "running")) occluded=\(!(window?.occlusionState.contains(.visible) ?? false)) onscreen=\(window?.isOnActiveSpace ?? false)"
     }
     func debugType(_ text: String) {
         pageView?.debugInsert(text)
@@ -1650,7 +1733,7 @@ extension ReaderView {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = reduceMotion ? 0 : 0.14
             bar.animator().alphaValue = 0
-        }, completionHandler: { bar.removeFromSuperview() })
+        }, completionHandler: { MainActor.assumeIsolated { bar.removeFromSuperview() } })
         window?.makeFirstResponder(self)
     }
 }

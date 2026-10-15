@@ -286,7 +286,7 @@ final class BrowserIntegration {
 
     /// The front tab's URL via Apple Events (Safari and Chromium-family browsers), or nil.
     /// Blocks for at most about 1.5 seconds; nil on error, timeout, or when Automation access is denied.
-    func frontTabURL(of app: NSRunningApplication) -> URL? {
+    func frontTabURL(of app: NSRunningApplication) async -> URL? {
         guard !app.isTerminated, let id = app.bundleIdentifier, let style = Self.knownBrowsers[id]?.tabScript else { return nil }
         let tab = style == .safari ? "current tab" : "active tab"
         let script = """
@@ -297,7 +297,7 @@ final class BrowserIntegration {
                 end tell
             end timeout
             """
-        guard let string = Self.runAppleScript(script, timeout: 1.5), !string.isEmpty,
+        guard let string = await Self.runAppleScript(script, timeout: 1.5), !string.isEmpty,
               let url = URL(string: string), url.scheme != nil else { return nil }
         return url
     }
@@ -339,16 +339,20 @@ final class BrowserIntegration {
     private nonisolated static let scriptQueue = DispatchQueue(label: "com.mason363.DeadCenter.applescript")
 
     /// Runs an AppleScript on a background queue and waits up to `timeout` for its string result.
-    private nonisolated static func runAppleScript(_ source: String, timeout: TimeInterval) -> String? {
-        let result = OSAllocatedUnfairLock<String?>(initialState: nil)
-        let done = DispatchSemaphore(value: 0)
-        scriptQueue.async {
-            let output = execute(source)
-            result.withLock { $0 = output }
-            done.signal()
+    /// Runs an AppleScript on the script queue without blocking the caller; nil after `timeout`.
+    private nonisolated static func runAppleScript(_ source: String, timeout: TimeInterval) async -> String? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            let resumed = OSAllocatedUnfairLock(initialState: false)
+            let finish: @Sendable (String?) -> Void = { value in
+                let first = resumed.withLock { done in
+                    defer { done = true }
+                    return !done
+                }
+                if first { continuation.resume(returning: value) }
+            }
+            scriptQueue.async { finish(execute(source)) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { finish(nil) }
         }
-        guard done.wait(timeout: .now() + timeout) == .success else { return nil }
-        return result.withLock { $0 }
     }
 
     /// Runs an AppleScript on a background queue and calls back on the main actor with its result.

@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import CryptoKit
+import UniformTypeIdentifiers
 import DCModel
 import DCIngest
 
@@ -29,8 +30,16 @@ struct ReadRequest {
 
     static func file(_ url: URL) -> ReadRequest {
         let url = url.standardizedFileURL
-        return ReadRequest(input: .file(url), title: url.deletingPathExtension().lastPathComponent,
+        // Saved scans always read as pages; other photos and image-only PDFs do once page scans are on.
+        let scan = ScanStore.contains(url) || (Preferences.shared.pageScanning && Self.isPageLike(url))
+        return ReadRequest(input: scan ? .scan(.file(url)) : .file(url), title: url.deletingPathExtension().lastPathComponent,
                            origin: .file(url), id: "file:" + url.path, stored: nil)
+    }
+
+    /// Images and PDFs: what a photo or scan of a page arrives as.
+    private static func isPageLike(_ url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        return type.conforms(to: .image) || type.conforms(to: .pdf)
     }
 
     static func web(_ url: URL) -> ReadRequest {
@@ -54,7 +63,8 @@ struct ReadRequest {
     }
 
     static func image(_ data: Data, origin: DocumentOrigin) -> ReadRequest {
-        ReadRequest(input: .image(data), title: "Image", origin: origin, id: "image:" + Self.digest(data), stored: nil)
+        let input: IngestInput = Preferences.shared.pageScanning ? .scan(.images([data])) : .image(data)
+        return ReadRequest(input: input, title: "Image", origin: origin, id: "image:" + Self.digest(data), stored: nil)
     }
 
     static func normalized(_ url: URL) -> String {

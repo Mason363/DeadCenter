@@ -46,8 +46,13 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
     private var frameBeforeFullScreen: NSRect?
     private var frameBeforeImage: NSRect?
     private var isAnimating = false
+    private var closeGeneration = 0
     private let prefs = Preferences.shared
     private static let frameKey = "readerFrame"
+    private static let pageFrameKey = "readerPageFrame"
+    /// The reading mode the window's current frame belongs to; each mode remembers its own size.
+    private var frameMode = Preferences.shared.readingMode
+    private var currentFrameKey: String { frameMode == .page ? Self.pageFrameKey : Self.frameKey }
 
     var isVisible: Bool { panel.isVisible }
 
@@ -67,7 +72,10 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
 
     func show(_ session: ReaderSession) {
         readerView.session = session
+        // Cancels a close that's still animating out.
+        closeGeneration += 1
         if panel.isVisible {
+            panel.alphaValue = 1
             panel.makeKeyAndOrderFront(nil)
             panel.makeFirstResponder(readerView)
             return
@@ -97,16 +105,21 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
         restoreFromImage(animated: false)
         let frame = panel.frame
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        closeGeneration += 1
+        let generation = closeGeneration
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = reduce ? 0.12 : 0.2
             ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 1)
             panel.animator().alphaValue = 0
             if !reduce { panel.animator().setFrameOrigin(NSPoint(x: frame.minX, y: frame.minY - 6)) }
         }, completionHandler: { [weak self] in
-            guard let self else { return }
-            self.panel.orderOut(nil)
-            self.panel.alphaValue = 1
-            self.panel.setFrame(frame, display: false)
+            MainActor.assumeIsolated {
+                // Something was opened again while this was fading out: leave it on screen.
+                guard let self, self.closeGeneration == generation else { return }
+                self.panel.orderOut(nil)
+                self.panel.alphaValue = 1
+                self.panel.setFrame(frame, display: false)
+            }
         })
         onClose?()
     }
@@ -121,12 +134,19 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
     private func initialFrame() -> NSRect {
         let screen = activeScreen()
         let visible = screen.visibleFrame
-        if let saved = UserDefaults.standard.string(forKey: Self.frameKey).map(NSRectFromString),
+        frameMode = prefs.readingMode
+        if let saved = UserDefaults.standard.string(forKey: currentFrameKey).map(NSRectFromString),
            saved.width >= panel.minSize.width, visible.contains(saved) {
             return saved
         }
+        if frameMode == .page { return centered(pageSize(in: visible), in: visible) }
         let size = savedSize() ?? prefs.windowSize.size
         return centered(size, in: visible)
+    }
+
+    /// A page-shaped window: a comfortable measure and most of the screen's height.
+    private func pageSize(in visible: NSRect) -> NSSize {
+        NSSize(width: min(860, visible.width - 80), height: min(max(visible.height * 0.7, 480), 820))
     }
 
     private func savedSize() -> NSSize? {
@@ -144,7 +164,7 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
 
     private func saveFrame() {
         guard !isFullScreen, frameBeforeImage == nil, !isAnimating, panel.isVisible else { return }
-        UserDefaults.standard.set(NSStringFromRect(panel.frame), forKey: Self.frameKey)
+        UserDefaults.standard.set(NSStringFromRect(panel.frame), forKey: currentFrameKey)
     }
 
     func windowDidMove(_ notification: Notification) { saveFrame() }
@@ -156,7 +176,13 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
 
     func windowDidEndLiveResize(_ notification: Notification) { saveFrame() }
 
-    private func animate(to frame: NSRect, duration: TimeInterval = 0.32, completion: (() -> Void)? = nil) {
+    private func animate(to frame: NSRect, duration: TimeInterval = 0.32, completion: (@MainActor () -> Void)? = nil) {
+        // Frame animations only advance on screen; a hidden window just takes its new frame.
+        guard panel.occlusionState.contains(.visible) else {
+            panel.setFrame(frame, display: false)
+            completion?()
+            return
+        }
         isAnimating = true
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -165,8 +191,10 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
             ctx.allowsImplicitAnimation = true
             panel.animator().setFrame(frame, display: true)
         }, completionHandler: { [weak self] in
-            self?.isAnimating = false
-            completion?()
+            MainActor.assumeIsolated {
+                self?.isAnimating = false
+                completion?()
+            }
         })
     }
 
@@ -195,7 +223,27 @@ final class ReaderWindowController: NSObject, NSWindowDelegate, ReaderViewHost {
     }
 
     func readerView(_ view: ReaderView, imageBeatActive active: Bool) {
+        // The page shows its pictures inline; only the focus view grows for them.
+        guard frameMode == .focus || !active else { return }
         if active { expandForImage() } else { restoreFromImage(animated: true) }
+    }
+
+    func readerView(_ view: ReaderView, didSwitchTo mode: ReadingMode) {
+        guard mode != frameMode else { return }
+        restoreFromImage(animated: false)
+        saveFrame()
+        frameMode = mode
+        guard panel.isVisible, !isFullScreen else { return }
+        let visible = panel.screen?.visibleFrame ?? activeScreen().visibleFrame
+        let saved = UserDefaults.standard.string(forKey: currentFrameKey).map(NSRectFromString)
+            .flatMap { $0.width >= panel.minSize.width ? $0.size : nil }
+        let size = saved ?? (mode == .page ? pageSize(in: visible) : (savedSize() ?? prefs.windowSize.size))
+        // Grow or shrink around the window's top center, so the text stays where the eye is.
+        let frame = panel.frame
+        var target = NSRect(x: (frame.midX - size.width / 2).rounded(), y: (frame.maxY - size.height).rounded(),
+                            width: size.width, height: size.height)
+        target = target.constrained(to: visible)
+        animate(to: target, duration: 0.38) { [weak self] in self?.saveFrame() }
     }
 
     // MARK: - Full screen

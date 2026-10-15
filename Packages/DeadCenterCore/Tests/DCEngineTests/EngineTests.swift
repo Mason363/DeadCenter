@@ -196,9 +196,43 @@ import DCModel
         #expect(words.map(\.focusText) == ["The", "students’", "work", "isn’t", "done", "it’s", "close."])
     }
 
+    @Test func bareWordsDropBracketsQuotesAndDashes() {
+        let words = items("He said (quite loudly) that “we’re ‘done.’” It was late — very late; this—that 1990–2000 well-known.")
+        #expect(words.map(\.bareText) == ["He", "said", "quite", "loudly", "that", "we’re", "done.", "It", "was", "late",
+                                           "very", "late;", "this", "that", "1990–2000", "well-known."])
+        #expect(TextShaping.bareWord("[12],") == "12,")
+        #expect(TextShaping.bareWord("—") == "—")
+        #expect(TextShaping.bareWord("…") == "…")
+        #expect(TextShaping.bareWord("Constan-") == "Constan-")
+        #expect(TextShaping.bareWord("«Bonjour»") == "Bonjour")
+        #expect(TextShaping.bareWord("(🎉)") == "🎉")
+    }
+
     @Test func spacedBracketsAttach() {
         let words = items("a ( spaced ) aside")
         #expect(words.map(\.text) == ["a", "spaced", "aside"])
         #expect(words.map(\.enclosure) == [nil, "(", nil])
+    }
+}
+
+@Suite struct UnicodeSafetyTests {
+    @Test(arguments: ["🇯🇵日本", "🇨🇳中国队夺冠", "🇯🇵ひらがな", "👍🏽日本", "👋🏻こんにちは", "🇯🇵🇺🇸日本", "✌🏿中文", "👍🏽?ไทย"])
+    func emojiBeforeSpacelessScripts(text: String) {
+        let items = Tokenizer().tokenize([.paragraph(text)]).items
+        // Nothing lost, nothing split inside a character, no replacement characters.
+        #expect(items.map(\.text).joined() == text)
+        #expect(!items.contains { $0.text.contains("\u{FFFD}") })
+    }
+
+    @Test func emojiWordsAreKept() {
+        let words = Tokenizer().tokenize([.paragraph("Family 👨‍👩‍👧‍👦 trip 🇯🇵 and 😀😀😀 done & dusted.")]).items.map(\.text)
+        #expect(words == ["Family", "👨‍👩‍👧‍👦", "trip", "🇯🇵", "and", "😀😀😀", "done", "&", "dusted."])
+    }
+
+    @Test func hyphenationNeverSplitsEmoji() {
+        let text = "abcdefghijklmn👨‍👩‍👧‍👦xyz"
+        let items = Tokenizer().tokenize([.paragraph(text)]).items
+        #expect(!items.contains { $0.text.contains("\u{FFFD}") })
+        #expect(items.map(\.sourceText).joined() == text)
     }
 }

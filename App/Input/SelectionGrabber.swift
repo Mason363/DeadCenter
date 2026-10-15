@@ -5,7 +5,7 @@ import Carbon.HIToolbox
 /// Reads the selected text in another app: Accessibility first, then a careful ⌘C that
 /// restores the clipboard afterwards.
 enum SelectionGrabber {
-    enum Result {
+    nonisolated enum Result: Sendable {
         case text(String)
         /// The app reported an empty selection.
         case none
@@ -17,7 +17,7 @@ enum SelectionGrabber {
 
     static func selection(in app: NSRunningApplication, isBrowser: Bool) async -> Result {
         guard isTrusted else { return .unknown }
-        let ax = accessibilitySelection(in: app)
+        let ax = await accessibilitySelection(pid: app.processIdentifier)
         switch ax {
         case .text:
             return ax
@@ -31,8 +31,9 @@ enum SelectionGrabber {
         }
     }
 
-    private static func accessibilitySelection(in app: NSRunningApplication) -> Result {
-        let element = AXUIElementCreateApplication(app.processIdentifier)
+    /// Accessibility calls can wait on a busy app, so they run off the main thread.
+    @concurrent private nonisolated static func accessibilitySelection(pid: pid_t) async -> Result {
+        let element = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(element, 0.4)
         // Chromium and Electron apps only build their accessibility tree when asked.
         AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
@@ -50,9 +51,13 @@ enum SelectionGrabber {
     }
 
     /// The file behind the focused window (Preview, TextEdit, Pages, Word…), if the app exposes it.
-    static func documentURL(in app: NSRunningApplication) -> URL? {
+    static func documentURL(in app: NSRunningApplication) async -> URL? {
         guard isTrusted else { return nil }
-        let element = AXUIElementCreateApplication(app.processIdentifier)
+        return await documentURL(pid: app.processIdentifier)
+    }
+
+    @concurrent private nonisolated static func documentURL(pid: pid_t) async -> URL? {
+        let element = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(element, 0.4)
         var window: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success,
@@ -77,11 +82,36 @@ enum SelectionGrabber {
         while pasteboard.changeCount == before, Date() < deadline {
             try? await Task.sleep(for: .milliseconds(15))
         }
-        guard pasteboard.changeCount != before else { return nil }
-        let text = pasteboard.string(forType: .string)
-            ?? pasteboard.data(forType: .rtf).flatMap { NSAttributedString(rtf: $0, documentAttributes: nil)?.string }
+        guard pasteboard.changeCount != before else {
+            // A slow app may still copy after we stop waiting; put the clipboard back if it does.
+            Task { await restoreAfterLateCopy(saved, since: before) }
+            return nil
+        }
+        var text = string(on: pasteboard)
+        // Some apps announce the copy a moment before the text is there.
+        for _ in 0..<6 where text == nil {
+            try? await Task.sleep(for: .milliseconds(25))
+            text = string(on: pasteboard)
+        }
         restore(saved, to: pasteboard)
         return text
+    }
+
+    private static func string(on pasteboard: NSPasteboard) -> String? {
+        pasteboard.string(forType: .string)
+            ?? pasteboard.data(forType: .rtf).flatMap { NSAttributedString(rtf: $0, documentAttributes: nil)?.string }
+    }
+
+    private static func restoreAfterLateCopy(_ saved: [[NSPasteboard.PasteboardType: Data]], since before: Int) async {
+        let pasteboard = NSPasteboard.general
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(40))
+            guard pasteboard.changeCount != before else { continue }
+            // Only our ⌘C landing; anything later is the person copying something new.
+            if pasteboard.changeCount == before + 1 { restore(saved, to: pasteboard) }
+            return
+        }
     }
 
     private static func snapshot(_ pasteboard: NSPasteboard) -> [[NSPasteboard.PasteboardType: Data]] {

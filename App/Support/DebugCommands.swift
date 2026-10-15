@@ -3,6 +3,9 @@ import AppKit
 
 /// `deadcenter://debug?cmd=…` — drives the reader in debug builds without synthesizing input.
 enum DebugCommands {
+    /// A clock that only moves forward, for `advance`.
+    private static var clock: CFTimeInterval = 0
+
     static func run(_ items: [URLQueryItem]) {
         func value(_ name: String) -> String? { items.first { $0.name == name }?.value }
         let coordinator = ReadingCoordinator.shared
@@ -27,9 +30,47 @@ enum DebugCommands {
         case "closebtn": view.debugShowClose()
         case "library": LibraryWindowController.shared.show()
         case "libcompose": LibraryWindowController.shared.compose()
+        case "libscan":
+            LibraryState.shared.composing = false
+            LibraryState.shared.scanning = true
+        case "scanadd":
+            if let path = value("path"), let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+                if path.lowercased().hasSuffix(".pdf") { ScanDraft.shared.add(pdf: data) } else { ScanDraft.shared.add(images: [data]) }
+            }
+        case "scanread": ScanDraft.shared.read()
+        case "dump":
+            if let out = value("out"), let session {
+                var lines: [String] = []
+                var paragraph = -1
+                var line = ""
+                for item in session.stream.items {
+                    switch item.kind {
+                    case .word:
+                        if item.paragraph != paragraph, !line.isEmpty { lines.append(line); line = "" }
+                        paragraph = item.paragraph
+                        line += (line.isEmpty || !item.spaceBefore ? "" : " ") + item.sourceText
+                    case .image:
+                        if !line.isEmpty { lines.append(line); line = "" }
+                        lines.append("[IMAGE \(item.image?.pixelWidth ?? 0)x\(item.image?.pixelHeight ?? 0) caption: \(item.image?.caption ?? "-")]")
+                    case .title:
+                        if !line.isEmpty { lines.append(line); line = "" }
+                        lines.append("# " + item.text)
+                    }
+                }
+                if !line.isEmpty { lines.append(line) }
+                try? (["TITLE: \(session.title)"] + lines).joined(separator: "\n").write(toFile: out, atomically: true, encoding: .utf8)
+            }
         case "libhome": LibraryState.shared.composing = false
+        case "resume":
+            let unfinished = LibraryStore.shared.all.filter { !$0.finished }
+            let n = Int(value("n") ?? "0") ?? 0
+            if unfinished.indices.contains(n) { coordinator.resume(unfinished[n]) }
         case "libdraft": LibraryState.shared.draft = value("q") ?? ""
         case "settings": SettingsWindowController.shared.show()
+        case "closewin":
+            NSApp.windows.first { $0.isVisible && $0.title == (value("title") ?? "") }?.performClose(nil)
+        case "transcribe":
+            if let path = value("path") { TranscriptionController.shared.transcribe(file: URL(fileURLWithPath: path)) }
         case "winof":
             if let out = value("out") {
                 let number = NSApp.windows.first { $0.isVisible && $0.title == (value("title") ?? "") }?.windowNumber ?? 0
@@ -54,13 +95,36 @@ enum DebugCommands {
         case "timeline": view.debugTimeline(at: CGFloat(Double(value("x") ?? "0.5") ?? 0.5))
         case "close": coordinator.window.close()
         case "wpm": Preferences.shared.wpm = Int(value("n") ?? "350") ?? 350
+        case "frame":
+            if let out = value("out") {
+                try? NSStringFromRect(coordinator.window.panel.frame).write(toFile: out, atomically: true, encoding: .utf8)
+            }
         case "winid":
             if let out = value("out") {
                 try? "\(coordinator.window.panel.windowNumber)".write(toFile: out, atomically: true, encoding: .utf8)
             }
+        case "pagescroll":
+            let pending = view.debugPageScroll(CGFloat(Double(value("y") ?? "0") ?? 0), location: value("loc").flatMap { Int($0) })
+            if let out = value("out") { try? "\(pending)".write(toFile: out, atomically: true, encoding: .utf8) }
+        case "advance":
+            // Moves playback on by n beats without waiting for the clock (works while the window is hidden).
+            if let session, session.state == .playing {
+                for _ in 0..<(Int(value("n") ?? "1") ?? 1) {
+                    clock = max(clock, CACurrentMediaTime()) + 120
+                    session.tick(clock)
+                }
+            }
+        case "pagestate":
+            if let out = value("out") { try? view.debugPageState.write(toFile: out, atomically: true, encoding: .utf8) }
+        case "matches":
+            if let out = value("out"), let session {
+                let stream = session.stream
+                let lines = stream.matches(for: value("q") ?? "").map { "\($0) \(stream.items[$0].text)" }
+                try? lines.joined(separator: "\n").write(toFile: out, atomically: true, encoding: .utf8)
+            }
         case "state":
             if let out = value("out"), let session {
-                let line = "\(session.state) index=\(session.index) count=\(session.stream.count) title=\(session.title)"
+                let line = "\(session.state) index=\(session.index) count=\(session.stream.count) title=\(session.title) \(view.debugLinkState)"
                 try? line.write(toFile: out, atomically: true, encoding: .utf8)
             }
         default: break

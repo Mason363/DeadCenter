@@ -38,6 +38,14 @@ struct GeneralSettingsView: View {
                 }
             }
 
+            SettingsSection(title: "Page Scans",
+                            footer: "Everything happens on your Mac with Apple's built-in text recognition. Nothing to download.") {
+                SettingsRow(title: "Scan pages with your iPhone",
+                            detail: "Photograph textbook pages and papers. Pages are straightened, columns read in order, and figures kept as pictures.") {
+                    DCToggle(isOn: $prefs.pageScanning)
+                }
+            }
+
             SettingsSection(title: "System") {
                 SettingsRow(title: "Launch at login", detail: launchDetail) {
                     HStack(spacing: 10) {

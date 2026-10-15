@@ -17,6 +17,7 @@ final class ReaderChromeModel {
     @ObservationIgnored var onScrubbing: (Bool) -> Void = { _ in }
     @ObservationIgnored var onHover: (Double?) -> Void = { _ in }
     @ObservationIgnored var onSpeedChange: (Int) -> Void = { _ in }
+    @ObservationIgnored var onModeChange: (ReadingMode) -> Void = { _ in }
 }
 
 /// The reader's quiet bottom edge: one info line and a thin timeline. Speed buttons and the
@@ -43,7 +44,11 @@ struct ReaderChrome: View {
             }
             .font(.system(size: 12, weight: .medium).monospacedDigit())
             .frame(height: 22)
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 124)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .trailing) {
+                ModeSwitch(model: model).padding(.trailing, 14)
+            }
 
             TimelineTrack(model: model, near: near)
         }
@@ -80,6 +85,41 @@ struct ReaderChrome: View {
 
     private var separator: some View {
         Text("  ·  ").fixedSize()
+    }
+}
+
+/// Focus or Page, always within reach at the right of the info line.
+private struct ModeSwitch: View {
+    let model: ReaderChromeModel
+    @Namespace private var highlight
+
+    var body: some View {
+        let mode = Preferences.shared.readingMode
+        let text = Color(nsColor: model.palette.text)
+        HStack(spacing: 1) {
+            ForEach(ReadingMode.allCases) { option in
+                let selected = option == mode
+                Button { model.onModeChange(option) } label: {
+                    Text(option == .focus ? "Focus" : "Page")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(text.opacity(selected ? 0.9 : 0.42))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 3)
+                        .background {
+                            if selected {
+                                Capsule().fill(text.opacity(0.12)).matchedGeometryEffect(id: "mode", in: highlight)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(option == .focus ? "One word at a time  ⇥" : "The whole page, your word in red  ⇥")
+            }
+        }
+        .padding(2)
+        .background(Capsule().strokeBorder(text.opacity(0.1), lineWidth: 0.5))
+        .fixedSize()
+        .animation(.spring(response: 0.3, dampingFraction: 0.86), value: mode)
     }
 }
 

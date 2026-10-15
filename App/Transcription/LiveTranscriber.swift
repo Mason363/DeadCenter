@@ -103,7 +103,8 @@ nonisolated struct LiveTranscriber {
             } else if seconds >= 8, let cut = Word.sentenceBoundary(in: words, before: committed.end) {
                 drop(Int(((cut - 0.2 - offset) * rate).rounded()))
             } else if seconds >= 20 {
-                drop(Int(((committed.end - 0.2 - offset) * rate).rounded()))
+                // Keep at most 10 s even when nothing new was confirmed, so the window can't outgrow Whisper's 30 s.
+                drop(max(Int(((committed.end - 0.2 - offset) * rate).rounded()), window.count - Int(10 * rate)))
             }
 
             await update(LiveUpdate(confirmed: Word.sentences(from: confirmed),

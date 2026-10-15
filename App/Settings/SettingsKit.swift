@@ -6,11 +6,13 @@ struct SettingsTheme {
     var ink: Color
     var accent: Color
     var background: Color
+    var isDark: Bool
 
     init(_ palette: ReaderPalette) {
         ink = Color(nsColor: palette.text)
         accent = Color(nsColor: palette.pivot)
         background = Color(nsColor: palette.background)
+        isDark = WindowTheming.isDark(palette.background)
     }
 }
 

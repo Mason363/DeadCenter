@@ -31,6 +31,10 @@ struct ReadingSettingsView: View {
                                 options: PivotMode.allCases.map { ($0, $0 == .optimal ? "Optimal" : "Middle") })
                 }
                 RowDivider()
+                SettingsRow(title: "Bare words", detail: "Hide brackets, quotes and dashes around words. The pauses stay.") {
+                    DCToggle(isOn: $prefs.bareWords)
+                }
+                RowDivider()
                 SettingsRow(title: "Pacing", detail: pacingHint) {
                     DCSegmented(selection: $prefs.pacing, options: Pacing.allCases.map { ($0, $0.label) })
                 }

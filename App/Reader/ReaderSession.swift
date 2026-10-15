@@ -60,6 +60,10 @@ final class ReaderSession {
     @ObservationIgnored private var pausedAt: CFTimeInterval = 0
     @ObservationIgnored private var waitingForContent = false
     @ObservationIgnored private var startPending = false
+    /// Identifies the current ingestion, so results from a cancelled one are ignored.
+    @ObservationIgnored private var loadToken = 0
+    /// After an edit: the word (counted the way the page counts them) to land on.
+    @ObservationIgnored private var pendingResumeWords: Int?
     private let rampLength = 7
 
     init(id: String, title: String?, origin: DocumentOrigin) {
@@ -78,7 +82,10 @@ final class ReaderSession {
     /// Starts ingesting `input`. Reading can begin as soon as the first words arrive.
     func load(_ input: IngestInput, resumeAt: Int? = nil) {
         ingestTask?.cancel()
+        loadToken += 1
+        let token = loadToken
         pendingResume = resumeAt.flatMap { $0 > 0 ? $0 : nil }
+        pendingResumeWords = nil
         isIngesting = true
         let events = Ingestor.ingest(input)
         ingestTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -88,20 +95,22 @@ final class ReaderSession {
                     try Task.checkCancellation()
                     switch event {
                     case .title(let title):
-                        await self?.adoptTitle(title)
+                        await self?.adoptTitle(title, token: token)
                     case .blocks(let blocks):
                         let batch = tokenizer.tokenize(blocks)
                         guard !batch.items.isEmpty else { continue }
-                        await self?.append(batch)
+                        await self?.append(batch, token: token)
                     case .progress(let p):
-                        await self?.setProgress(p)
+                        await self?.setProgress(p, token: token)
                     }
                 }
-                await self?.finishIngest(error: nil)
+                // A cancelled stream can end without throwing; don't report it as finished.
+                guard !Task.isCancelled else { return }
+                await self?.finishIngest(error: nil, token: token)
             } catch is CancellationError {
                 // Replaced or closed.
             } catch {
-                await self?.finishIngest(error: error)
+                await self?.finishIngest(error: error, token: token)
             }
         }
     }
@@ -109,6 +118,7 @@ final class ReaderSession {
     /// Loads an already-tokenized stream (previews, onboarding).
     func load(_ stream: ReadingStream) {
         ingestTask?.cancel()
+        loadToken += 1
         self.stream = stream
         contentGeneration += 1
         isIngesting = false
@@ -121,6 +131,7 @@ final class ReaderSession {
     func cancelLoading() {
         ingestTask?.cancel()
         ingestTask = nil
+        loadToken += 1
         isIngesting = false
     }
 
@@ -145,7 +156,8 @@ final class ReaderSession {
         state = .loading
         delegate?.session(self, didChange: .content)
         delegate?.session(self, didChange: .state)
-        load(.text(text), resumeAt: wordIndex)
+        load(.text(text))
+        pendingResumeWords = wordIndex > 0 ? wordIndex : nil
     }
 
     // MARK: - Live
@@ -182,25 +194,35 @@ final class ReaderSession {
         title = fallback
     }
 
-    private func adoptTitle(_ title: String) {
-        guard !hasExplicitTitle else { return }
+    private func adoptTitle(_ title: String, token: Int) {
+        guard token == loadToken, !hasExplicitTitle else { return }
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         self.title = t
         delegate?.session(self, didChange: .content)
     }
 
-    private func setProgress(_ p: Double) {
+    private func setProgress(_ p: Double, token: Int) {
+        guard token == loadToken else { return }
         ingestProgress = p
     }
 
-    private func append(_ batch: TokenBatch) {
+    /// `token` is nil for live feeds, which aren't ingestion.
+    private func append(_ batch: TokenBatch, token: Int? = nil) {
+        if let token, token != loadToken { return }
         stream.append(batch)
         if !hasExplicitTitle, title.isEmpty, let first = batch.chapters.first {
             title = first.title
         }
         if state == .loading {
-            if let resume = pendingResume {
+            if let words = pendingResumeWords {
+                guard let target = stream.itemIndex(forWord: words) else {
+                    delegate?.session(self, didChange: .content)
+                    return
+                }
+                index = target
+                pendingResumeWords = nil
+            } else if let resume = pendingResume {
                 guard resume < stream.count else {
                     delegate?.session(self, didChange: .content)
                     return
@@ -226,7 +248,8 @@ final class ReaderSession {
         }
     }
 
-    private func finishIngest(error: Error?) {
+    private func finishIngest(error: Error?, token: Int? = nil) {
+        if let token, token != loadToken { return }
         isIngesting = false
         ingestProgress = 1
         if stream.isEmpty || state == .loading {
@@ -234,10 +257,12 @@ final class ReaderSession {
                 let message = (error as? LocalizedError)?.errorDescription
                     ?? error?.localizedDescription ?? "There's no readable text here."
                 state = .failed(message)
+                onProgress?(self)
             } else {
-                // Resume point was past the end; start from the top.
+                // Resume point was past the end: an edit lands at the end, anything else at the top.
+                index = pendingResumeWords != nil ? max(stream.count - 1, 0) : 0
                 pendingResume = nil
-                index = 0
+                pendingResumeWords = nil
                 state = .paused
                 if startPending {
                     play()
@@ -273,8 +298,10 @@ final class ReaderSession {
 
     var pacer: Pacer {
         let prefs = Preferences.shared
+        // On the page, pictures sit inline with the text, so they only get a short look.
+        let imageSeconds = prefs.readingMode == .page ? 1.5 : prefs.imageDuration
         return Pacer(wpm: Double(prefs.wpm), pacingStrength: prefs.pacing.strength,
-                     imageSeconds: prefs.showImages ? prefs.imageDuration : 0, meanExtra: stream.meanExtra,
+                     imageSeconds: prefs.showImages ? imageSeconds : 0, meanExtra: stream.meanExtra,
                      adaptive: prefs.adaptiveSpeed, meanComplexity: stream.meanComplexity)
     }
 
@@ -334,7 +361,8 @@ final class ReaderSession {
     }
 
     func togglePlayback() {
-        if state == .playing { pause() } else { play() }
+        // While loading, a second press cancels the pending start.
+        if state == .playing || (state == .loading && startPending) { pause() } else { play() }
     }
 
     /// Advances when the current item's time is up. Call once per display frame.
@@ -408,12 +436,16 @@ final class ReaderSession {
     /// Moves to `target`. While playing, playback continues from there with a short ease-in.
     func seek(to target: Int) {
         guard !stream.isEmpty else { return }
+        // An explicit move overrides any resume point still waiting for content.
+        pendingResume = nil
+        pendingResumeWords = nil
         let clamped = min(max(target, 0), stream.count - 1)
         if state == .finished { state = .paused; delegate?.session(self, didChange: .state) }
         guard clamped != index else { return }
         index = clamped
         if state == .playing {
             rampRemaining = Preferences.shared.easeIn ? 3 : 0
+            waitingForContent = false
             show(at: CACurrentMediaTime())
         } else {
             movedWhilePaused = true

@@ -46,6 +46,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(NSMenuItem(title: "Open File…", action: #selector(openFile), keyEquivalent: "o"))
         menu.addItem(NSMenuItem(title: "New Text…", action: #selector(compose), keyEquivalent: "n"))
+        if Preferences.shared.pageScanning {
+            menu.addItem(NSMenuItem(title: "Scan Pages…", action: #selector(scanPages), keyEquivalent: ""))
+        }
         for extra in MenuExtras.items() { menu.addItem(extra) }
 
         let recents = LibraryStore.shared.recents(limit: 6)
@@ -97,6 +100,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func readClipboard() { ReadingCoordinator.shared.readClipboard() }
     @objc private func openFile() { ReadingCoordinator.shared.presentOpenPanel() }
     @objc private func compose() { ReadingCoordinator.shared.compose() }
+    @objc private func scanPages() { LibraryWindowController.shared.scan() }
     @objc private func openLibrary() { LibraryWindowController.shared.show() }
     @objc private func openSettings() { SettingsWindowController.shared.show() }
     @objc private func quit() { NSApp.terminate(nil) }

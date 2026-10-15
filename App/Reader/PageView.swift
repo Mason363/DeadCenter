@@ -13,7 +13,11 @@ final class PageView: NSView, NSTextViewDelegate {
     }
 
     private let scrollView = NSScrollView()
+    /// Fades the text out at the page's top and bottom edges instead of cutting it off under the controls.
+    private let edgeFade = CAGradientLayer()
     private let hint = NSTextField(labelWithString: "Paste or type  ·  ⌘↩ to read  ·  Esc when done")
+    /// "Loading…" while the page waits for its first words.
+    private let placeholder = NSTextField(labelWithString: "")
     private let textView = PageTextView()
     private var itemRanges: [NSRange] = []
     private var itemIndices: [Int] = []
@@ -22,10 +26,26 @@ final class PageView: NSView, NSTextViewDelegate {
     private var palette: ReaderPalette = .dark
     private var bodyFont = NSFont.systemFont(ofSize: 18)
     private var lastParagraph = -1
-    private let images = ImageLoader()
+    /// Page images are drawn at text width, so they don't need the reader's full resolution.
+    private let images = ImageLoader(maxPixelSize: 1400)
+    /// Images not loaded yet; they load as they come near the visible part of the page.
+    private var pendingImages: [(attachment: NSTextAttachment, asset: ImageAsset, index: Int, location: Int)] = []
     private(set) var isEditing = false
-    /// True while the user has scrolled away; following resumes on the next jump.
+    private var textBeforeEditing = ""
+    /// True while the user has scrolled away; following resumes on the next jump, on play, or
+    /// once the current word is back in view.
     private var userScrolled = false
+    /// Top of the line the page last scrolled to while following playback.
+    private var followedLineY: CGFloat?
+    /// While playing, the page glides line by line so the current word stays at the same height.
+    var isPlaying = false {
+        didSet {
+            guard isPlaying, !oldValue else { return }
+            userScrolled = false
+            followedLineY = nil
+            if let highlighted { follow(highlighted) }
+        }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -35,10 +55,10 @@ final class PageView: NSView, NSTextViewDelegate {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
-        scrollView.autoresizingMask = [.width, .height]
-        scrollView.frame = bounds
         scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: ReaderView.barHeight, right: 0)
+        scrollView.wantsLayer = true
+        edgeFade.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor]
+        scrollView.layer?.mask = edgeFade
         addSubview(scrollView)
 
         textView.isEditable = false
@@ -50,6 +70,7 @@ final class PageView: NSView, NSTextViewDelegate {
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
         textView.isAutomaticSpellingCorrectionEnabled = false
+        if #available(macOS 15.0, *) { textView.writingToolsBehavior = .none }
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
@@ -66,22 +87,42 @@ final class PageView: NSView, NSTextViewDelegate {
         hint.frame = NSRect(x: 0, y: bounds.height - 34, width: bounds.width, height: 16)
         addSubview(hint)
 
+        placeholder.font = .systemFont(ofSize: 14, weight: .regular)
+        placeholder.alignment = .center
+        placeholder.isHidden = true
+        placeholder.autoresizingMask = [.width, .minYMargin, .maxYMargin]
+        placeholder.frame = NSRect(x: 0, y: (bounds.height - 20) / 2, width: bounds.width, height: 20)
+        addSubview(placeholder)
+
         NotificationCenter.default.addObserver(self, selector: #selector(didScroll),
                                                name: NSScrollView.willStartLiveScrollNotification, object: scrollView)
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(boundsChanged),
+                                               name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override func layout() {
         super.layout()
+        // The page ends above the info line, so the two never overlap.
+        scrollView.frame = NSRect(x: 0, y: ReaderView.barHeight, width: bounds.width,
+                                  height: max(0, bounds.height - ReaderView.barHeight))
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        edgeFade.frame = scrollView.bounds
+        let edge = Double(min(22 / max(scrollView.bounds.height, 1), 0.2))
+        edgeFade.locations = [0, NSNumber(value: edge), NSNumber(value: 1 - edge), 1]
+        CATransaction.commit()
         updateInsets()
+        loadVisibleImages()
     }
 
     private func updateInsets() {
         // A comfortable measure: ~70 characters, centered.
         let measure = min(bounds.width - 48, bodyFont.pointSize * 36)
         let side = max((bounds.width - measure) / 2, 24)
-        textView.textContainerInset = NSSize(width: side, height: max(28, bounds.height * 0.12))
+        textView.textContainerInset = NSSize(width: side, height: max(24, bounds.height * 0.1))
     }
 
     // MARK: - Content
@@ -90,6 +131,7 @@ final class PageView: NSView, NSTextViewDelegate {
         self.palette = palette
         bodyFont = font
         hint.textColor = palette.text.withAlphaComponent(0.4)
+        placeholder.textColor = palette.text.withAlphaComponent(0.45)
         textView.insertionPointColor = palette.pivot
         textView.selectedTextAttributes = [.backgroundColor: palette.pivot.withAlphaComponent(0.25)]
         if let storage = textView.textStorage, storage.length > 0 {
@@ -105,8 +147,9 @@ final class PageView: NSView, NSTextViewDelegate {
     }
 
     private func attributes(heading: Bool) -> [NSAttributedString.Key: Any] {
+        // Leading as line spacing, not a height multiple, so the editing caret matches the text.
         let style = NSMutableParagraphStyle()
-        style.lineHeightMultiple = heading ? 1.15 : 1.42
+        style.lineSpacing = bodyFont.pointSize * (heading ? 0.15 : 0.42)
         style.paragraphSpacing = bodyFont.pointSize * (heading ? 0.5 : 0.9)
         style.paragraphSpacingBefore = heading ? bodyFont.pointSize * 0.8 : 0
         let font = heading
@@ -117,6 +160,11 @@ final class PageView: NSView, NSTextViewDelegate {
             .foregroundColor: palette.text.withAlphaComponent(heading ? 1 : 0.86),
             .paragraphStyle: style,
         ]
+    }
+
+    func setPlaceholder(_ text: String?) {
+        placeholder.stringValue = text ?? ""
+        placeholder.isHidden = text == nil
     }
 
     /// Rebuilds the page from the stream. Call again with the same stream to append newly streamed items.
@@ -130,6 +178,7 @@ final class PageView: NSView, NSTextViewDelegate {
             lastParagraph = -1
             highlighted = nil
             images.reset()
+            pendingImages = []
         }
         guard stream.count > builtCount else { return }
         let text = NSMutableAttributedString()
@@ -176,30 +225,46 @@ final class PageView: NSView, NSTextViewDelegate {
                 itemIndices.append(i)
                 offset += 1
                 lastParagraph = -1
-                images.load(asset, index: i) { [weak self] image in
-                    guard let self, let image else { return }
-                    self.setImage(image, for: attachment)
-                }
+                pendingImages.append((attachment, asset, i, offset - 1))
             }
         }
         builtCount = stream.count
         storage.beginEditing()
         storage.append(text)
         storage.endEditing()
+        DispatchQueue.main.async { [weak self] in self?.loadVisibleImages() }
     }
 
-    private func setImage(_ image: CGImage, for attachment: NSTextAttachment) {
+    @objc private func boundsChanged() {
+        loadVisibleImages()
+    }
+
+    /// Loads images within a couple of screens of what's visible.
+    private func loadVisibleImages() {
+        guard !pendingImages.isEmpty, let layoutManager = textView.layoutManager,
+              let container = textView.textContainer else { return }
+        let visible = scrollView.contentView.bounds
+        let area = visible.insetBy(dx: 0, dy: -visible.height * 2)
+        let glyphs = layoutManager.glyphRange(forBoundingRect: area, in: container)
+        let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        let due = pendingImages.filter { NSLocationInRange($0.location, characters) }
+        guard !due.isEmpty else { return }
+        pendingImages.removeAll { NSLocationInRange($0.location, characters) }
+        for image in due {
+            images.load(image.asset, index: image.index) { [weak self] loaded in
+                guard let self, let loaded else { return }
+                self.setImage(loaded, for: image.attachment, at: image.location)
+            }
+        }
+    }
+
+    private func setImage(_ image: CGImage, for attachment: NSTextAttachment, at location: Int) {
         let width = min(CGFloat(image.width) / 2, bodyFont.pointSize * 34)
         let scale = width / CGFloat(image.width)
         attachment.image = NSImage(cgImage: image, size: NSSize(width: width, height: CGFloat(image.height) * scale))
-        if let storage = textView.textStorage {
-            storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, range, stop in
-                if (value as? NSTextAttachment) === attachment {
-                    textView.layoutManager?.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
-                    stop.pointee = true
-                }
-            }
-        }
+        guard let storage = textView.textStorage, location < storage.length else { return }
+        textView.layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: location, length: 1),
+                                                 actualCharacterRange: nil)
     }
 
     // MARK: - Highlight
@@ -218,7 +283,43 @@ final class PageView: NSView, NSTextViewDelegate {
         ], forCharacterRange: range)
         highlighted = range
         if scroll { userScrolled = false }
-        if !userScrolled { reveal(range, animated: scroll) }
+        if userScrolled, let rect = lineRect(for: range),
+           scrollView.contentView.bounds.insetBy(dx: 0, dy: scrollView.contentView.bounds.height * 0.2).contains(rect) {
+            userScrolled = false
+        }
+        guard !userScrolled else { return }
+        if isPlaying && !scroll { follow(range) } else { reveal(range, animated: scroll) }
+    }
+
+    private func lineRect(for range: NSRange) -> NSRect? {
+        guard let layoutManager = textView.layoutManager, let container = textView.textContainer,
+              NSMaxRange(range) <= (textView.textStorage?.length ?? 0) else { return nil }
+        let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        var rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
+        rect.origin.y += textView.textContainerOrigin.y
+        return rect
+    }
+
+    /// Keeps the current line a little above the middle, scrolling smoothly whenever it changes.
+    private func follow(_ range: NSRange) {
+        guard let rect = lineRect(for: range), rect.minY != followedLineY else { return }
+        followedLineY = rect.minY
+        let clip = scrollView.contentView
+        let visible = clip.bounds
+        let limit = max(textView.frame.height - visible.height, 0)
+        let target = NSPoint(x: 0, y: min(max(rect.midY - visible.height * 0.38, 0), limit))
+        guard abs(target.y - visible.minY) > 1 else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || abs(target.y - visible.minY) > visible.height {
+            clip.setBoundsOrigin(target)
+        } else {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.42
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 0, 0.2, 1)
+                ctx.allowsImplicitAnimation = true
+                clip.animator().setBoundsOrigin(target)
+            }
+        }
+        scrollView.reflectScrolledClipView(clip)
     }
 
     private func reveal(_ range: NSRange, animated: Bool) {
@@ -272,6 +373,7 @@ final class PageView: NSView, NSTextViewDelegate {
     func beginEditing(at index: Int) {
         guard !isEditing else { return }
         isEditing = true
+        textBeforeEditing = textView.string
         if let old = highlighted {
             textView.layoutManager?.removeTemporaryAttribute(.foregroundColor, forCharacterRange: old)
         }
@@ -284,16 +386,19 @@ final class PageView: NSView, NSTextViewDelegate {
     }
 
     /// Ends editing and returns the edited text plus the caret's word position (words before the caret).
-    func endEditing() -> (text: String, wordsBeforeCaret: Int) {
+    /// Ends editing: the text, how many whole words come before the caret, and whether anything changed.
+    func endEditing() -> (text: String, wordsBeforeCaret: Int, changed: Bool) {
         isEditing = false
         textView.isEditable = false
         hint.isHidden = true
         let text = textView.string
         let caret = min(textView.selectedRange().location, (text as NSString).length)
         let before = (text as NSString).substring(to: caret)
-        let words = before.split(whereSeparator: \.isWhitespace).count
+        var words = before.split(whereSeparator: \.isWhitespace).count
+        // A caret inside a word belongs to that word, not the next one.
+        if let last = before.last, !last.isWhitespace, words > 0 { words -= 1 }
         onEditingChanged?()
-        return (text, words)
+        return (text, words, text != textBeforeEditing)
     }
 
     func focusText() {
@@ -304,6 +409,22 @@ final class PageView: NSView, NSTextViewDelegate {
 
     #if DEBUG
     func debugInsert(_ text: String) { textView.insertText(text, replacementRange: textView.selectedRange()) }
+    func debugScroll(toCharacter location: Int) {
+        textView.scrollRangeToVisible(NSRange(location: location, length: 1))
+    }
+    func debugScroll(to fraction: CGFloat) {
+        let height = max(0, textView.frame.height - scrollView.contentView.bounds.height)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: height * fraction))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+    var debugPendingImages: String {
+        let visible = scrollView.contentView.bounds
+        var chars = NSRange()
+        if let lm = textView.layoutManager, let tc = textView.textContainer {
+            chars = lm.characterRange(forGlyphRange: lm.glyphRange(forBoundingRect: visible, in: tc), actualGlyphRange: nil)
+        }
+        return "highlight=\(highlighted.map(NSStringFromRange) ?? "-") line=\(highlighted.flatMap(lineRect(for:)).map(NSStringFromRect) ?? "-") playing=\(isPlaying) userScrolled=\(userScrolled) pending=\(pendingImages.count) vis=\(NSStringFromRect(visible)) frame=\(NSStringFromRect(textView.frame)) chars=\(NSStringFromRange(chars)) len=\(textView.textStorage?.length ?? 0) locs=\(pendingImages.map(\.location))"
+    }
     #endif
 }
 

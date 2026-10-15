@@ -249,8 +249,9 @@ public final class Tokenizer {
                 if h != kCFNotFound, h > start + 3, h <= limit { cut = h }
             }
             if cut < 0 {
-                cut = ns.rangeOfComposedCharacterSequence(at: limit).location
-                if cut <= start { cut = limit }
+                // Never cut inside a composed character (emoji, combining marks).
+                let composed = ns.rangeOfComposedCharacterSequence(at: limit)
+                cut = composed.location > start ? composed.location : NSMaxRange(composed)
             }
             var piece = ns.substring(with: NSRange(location: start, length: cut - start))
             if !natural { piece += "-" }
@@ -286,7 +287,12 @@ public final class Tokenizer {
                 }
             }
         }
-        for range in tokens {
+        for token in tokens {
+            // NLTokenizer can return overlapping or partial ranges inside emoji sequences
+            // (flags, skin tones); work in whole characters and never step backwards.
+            var range = chunk.rangeOfComposedCharacterSequences(for: token)
+            if range.lowerBound < cursor { range = cursor..<max(cursor, range.upperBound) }
+            guard !range.isEmpty else { continue }
             absorbGap(upTo: range.lowerBound)
             words.append(prefix + chunk[range])
             prefix = ""

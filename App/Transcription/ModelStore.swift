@@ -195,7 +195,16 @@ final class ModelStore {
     // MARK: - Delete
 
     func delete(_ tier: ModelTier) async {
-        cancelDownload(tier)
+        if let download = downloads[tier] {
+            download.cancel()
+            // Let the download stop writing before its files go (but don't hang on one that won't stop).
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await download.value }
+                group.addTask { try? await Task.sleep(for: .seconds(5)) }
+                await group.next()
+                group.cancelAll()
+            }
+        }
         let variant = build(for: tier).variant
         await WhisperService.shared.unload(ifVariant: variant)
         let fm = FileManager.default

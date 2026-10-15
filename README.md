@@ -54,12 +54,14 @@ Your speed is a promise. Dead Center never goes faster than you set it. It only 
 - **Books and documents.** PDF (even scanned ones), EPUB, Word, Markdown and more, with their pictures.
 - **Pasted text.** Chat answers, notes and math read as clean prose, never as `**markup**`.
 - **Images.** The words in screenshots and photos.
+- **Textbooks and papers.** Photograph a page with your iPhone. Columns come out in order, and figures stay as pictures.
 - **Speech.** Meetings, lectures and recordings, transcribed on your Mac and ready to read.
 
 ## Made to disappear
 
 <img src="docs/library.png" width="720" alt="The Dead Center window: unfinished readings as cards around a plus button">
 
+- Two ways to read: one word at a time, or the whole page with your word lit in red.
 - Lives in your menu bar. One shortcut works from anywhere.
 - Pause, and the whole sentence is there. Swipe to move through it.
 - Picks up where you left off, in everything you read.
