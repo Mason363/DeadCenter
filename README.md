@@ -45,12 +45,12 @@ The average adult reads about [240 words a minute](https://doi.org/10.1016/j.jml
 
 <img src="docs/pace-1000.gif" width="600" alt="The same sentence at 1,000 words a minute">
 
-| A 300-page book | |
+| Your speed | A 300-page book |
 | --- | --- |
-| At 240 wpm, the average | 6 hours 15 minutes |
-| At 450 wpm | 3 hours 20 minutes |
-| At 700 wpm | 2 hours 10 minutes |
-| At 1,000 wpm | 1 hour 30 minutes |
+| 240 wpm, the average | 6 hours 15 minutes |
+| 450 wpm | 3 hours 20 minutes |
+| 700 wpm | 2 hours 10 minutes |
+| 1,000 wpm | 1 hour 30 minutes |
 
 Your speed is a promise. Dead Center never goes faster than you set it. It only takes a breath at the end of a sentence, on a long word, or for a picture, so even fast speeds feel natural. Start around 300 and nudge it up when it feels easy.
 
