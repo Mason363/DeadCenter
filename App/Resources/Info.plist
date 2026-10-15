@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Dead Center</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Dead Center</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Mason Chen</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Dead Center asks your browser for the address of the page you're on, so it can read the article to you.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.mason363.DeadCenter</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>deadcenter</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Readable Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+				<string>org.idpf.epub-container</string>
+				<string>public.plain-text</string>
+				<string>net.daringfireball.markdown</string>
+				<string>public.rtf</string>
+				<string>com.apple.rtfd</string>
+				<string>com.apple.flat-rtfd</string>
+				<string>public.html</string>
+				<string>com.apple.webarchive</string>
+				<string>org.openxmlformats.wordprocessingml.document</string>
+				<string>com.microsoft.word.doc</string>
+				<string>org.oasis-open.opendocument.text</string>
+				<string>public.image</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>net.daringfireball.markdown</string>
+			<key>UTTypeDescription</key>
+			<string>Markdown Document</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+					<string>mdown</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Read in Dead Center</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>readText</string>
+			<key>NSPortName</key>
+			<string>Dead Center</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendTypes</key>
+			<array>
+				<string>public.utf8-plain-text</string>
+				<string>public.rtf</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Read in Dead Center</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>readFiles</string>
+			<key>NSPortName</key>
+			<string>Dead Center</string>
+			<key>NSRequiredContext</key>
+			<dict/>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+				<string>org.idpf.epub-container</string>
+				<string>public.text</string>
+				<string>public.image</string>
+				<string>org.openxmlformats.wordprocessingml.document</string>
+				<string>com.microsoft.word.doc</string>
+				<string>org.oasis-open.opendocument.text</string>
+				<string>com.apple.webarchive</string>
+			</array>
+		</dict>
+	</array>
+	<key>SUFeedURL</key>
+	<string>https://github.com/Mason363/DeadCenter/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string></string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+</dict>
+</plist>

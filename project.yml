@@ -1,0 +1,125 @@
+name: DeadCenter
+options:
+  bundleIdPrefix: com.mason363
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+  groupSortPosition: top
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: 8GFSXN32MA
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "Developer ID Application"
+    ENABLE_HARDENED_RUNTIME: YES
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEAD_CODE_STRIPPING: YES
+    OTHER_CODE_SIGN_FLAGS: "--timestamp"
+
+packages:
+  DeadCenterCore:
+    path: Packages/DeadCenterCore
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: "2.0.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
+targets:
+  DeadCenter:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+        excludes:
+          - "Resources/Info.plist"
+          - "Resources/*.entitlements"
+    entitlements:
+      path: App/Resources/DeadCenter.entitlements
+    settings:
+      base:
+        PRODUCT_NAME: "Dead Center"
+        PRODUCT_BUNDLE_IDENTIFIER: com.mason363.DeadCenter
+        PRODUCT_MODULE_NAME: DeadCenter
+        INFOPLIST_FILE: App/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        COMBINE_HIDPI_IMAGES: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    dependencies:
+      - package: DeadCenterCore
+        product: DCModel
+      - package: DeadCenterCore
+        product: DCEngine
+      - package: DeadCenterCore
+        product: DCIngest
+      - package: KeyboardShortcuts
+      - package: Sparkle
+      - target: DeadCenterSafariExtension
+        embed: true
+        codeSign: true
+      - target: dead-center-bridge
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
+
+  DeadCenterSafariExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: SafariExtension
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+      - path: WebExtension
+        type: folder
+        buildPhase: resources
+    entitlements:
+      path: SafariExtension/SafariExtension.entitlements
+    settings:
+      base:
+        PRODUCT_NAME: "Dead Center Extension"
+        PRODUCT_BUNDLE_IDENTIFIER: com.mason363.DeadCenter.SafariExtension
+        INFOPLIST_FILE: SafariExtension/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks"
+    dependencies:
+      - package: DeadCenterCore
+        product: DCModel
+
+  dead-center-bridge:
+    type: tool
+    platform: macOS
+    sources:
+      - path: NativeHost
+        excludes:
+          - "*.entitlements"
+    entitlements:
+      path: NativeHost/Bridge.entitlements
+    settings:
+      base:
+        PRODUCT_NAME: dead-center-bridge
+        PRODUCT_BUNDLE_IDENTIFIER: com.mason363.DeadCenter.Bridge
+        SKIP_INSTALL: YES
+    dependencies:
+      - package: DeadCenterCore
+        product: DCModel
+
+schemes:
+  DeadCenter:
+    build:
+      targets:
+        DeadCenter: all
+    run:
+      config: Debug
+    archive:
+      config: Release
