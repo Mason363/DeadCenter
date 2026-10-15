@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/compare.gif" width="760" alt="The same paragraph read two ways. Read normally at 240 words a minute it takes 14 seconds. In Dead Center at 500 words a minute it's done in 7.">
+  <img src="docs/two-ways.gif" width="760" alt="The same paragraph read two ways. Read normally at 240 words a minute it takes 14 seconds. In Dead Center at 500 words a minute it's done in 7.">
 </p>
 
 <p align="center"><sub>The same paragraph, read two ways. Dead Center is done in half the time.</sub></p>
@@ -31,19 +31,19 @@ The average adult reads about [240 words a minute](https://doi.org/10.1016/j.jml
 
 **240 wpm.** Reading the usual way.
 
-<img src="docs/speed-240.gif" width="600" alt="A sentence read the usual way, at 240 words a minute">
+<img src="docs/pace-240.gif" width="600" alt="A sentence read the usual way, at 240 words a minute">
 
 **450 wpm.** Nearly twice the average, and most people are comfortable here within a few sessions.
 
-<img src="docs/speed-450.gif" width="600" alt="The same sentence in Dead Center at 450 words a minute">
+<img src="docs/pace-450.gif" width="600" alt="The same sentence in Dead Center at 450 words a minute">
 
 **700 wpm.** Almost three times the average. If you can keep up with this, you might have a hidden talent.
 
-<img src="docs/speed-700.gif" width="600" alt="The same sentence at 700 words a minute">
+<img src="docs/pace-700.gif" width="600" alt="The same sentence at 700 words a minute">
 
 **1,000 wpm.** Show-off territory. Great for skimming, and for things you've read before.
 
-<img src="docs/speed-1000.gif" width="600" alt="The same sentence at 1,000 words a minute">
+<img src="docs/pace-1000.gif" width="600" alt="The same sentence at 1,000 words a minute">
 
 | A 300-page book | |
 | --- | --- |
@@ -60,7 +60,7 @@ Your speed is a promise. Dead Center never goes faster than you set it. It only 
 
 **Page.** Your paragraphs just as they're written, with the word you're on lit in red and moving at your speed.
 
-<img src="docs/page-mode.gif" width="720" alt="A paragraph with the current word lit in red, moving along at reading speed">
+<img src="docs/page.gif" width="720" alt="A paragraph with the current word lit in red, moving along at reading speed">
 
 Switch any time with <kbd>Tab</kbd>, or the Focus · Page switch at the bottom of the reader.
 

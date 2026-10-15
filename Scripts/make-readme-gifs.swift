@@ -3,7 +3,7 @@
 //
 //   swift Scripts/make-readme-gifs.swift
 //
-// Writes docs/compare.gif, docs/page-mode.gif and docs/speed-*.gif.
+// Writes docs/two-ways.gif, docs/page.gif and docs/pace-*.gif.
 
 import AppKit
 import CoreText
@@ -244,13 +244,13 @@ second, and every jump costs a little time. Dead Center brings each word to the 
 can rest and your mind does the reading. Most people are surprised how quickly it starts to feel natural.
 """
 do {
-    let width = 1200, height = 500
+    let width = 1200, height = 580
     let half = CGFloat(width) / 2
     let paragraph = words(compareText)
     let slow = schedule(paragraph, wpm: 240, paced: false)
     let fast = schedule(paragraph.map(bare), wpm: 500, paced: true)
-    let page = Page(compareText, font: font(21, weight: .regular), width: half - 84, left: 44, top: 150,
-                    lineHeight: 33, canvasHeight: CGFloat(height))
+    let page = Page(compareText, font: font(25, weight: .regular), width: half - 80, left: 40, top: 150,
+                    lineHeight: 38, canvasHeight: CGFloat(height))
 
     func frame(at t: Double, started: Bool) -> CGImage {
         let ctx = context(width: width, height: height)
@@ -258,21 +258,21 @@ do {
         ctx.setFillColor(faint)
         ctx.fill(CGRect(x: half - 0.5, y: 56, width: 1, height: h - 112))
 
-        draw("Reading the usual way", font: font(21, weight: .semibold), color: soft, x: half / 2, y: h - 58, centered: true, in: ctx)
-        draw("240 words a minute, the average adult", font: font(15), color: quiet, x: half / 2, y: h - 84, centered: true, in: ctx)
-        draw("Dead Center", font: font(21, weight: .semibold), color: soft, x: half * 1.5, y: h - 58, centered: true, in: ctx)
-        draw("500 words a minute", font: font(15), color: quiet, x: half * 1.5, y: h - 84, centered: true, in: ctx)
+        draw("Reading the usual way", font: font(27, weight: .semibold), color: soft, x: half / 2, y: h - 62, centered: true, in: ctx)
+        draw("240 words a minute, the average adult", font: font(19), color: quiet, x: half / 2, y: h - 94, centered: true, in: ctx)
+        draw("Dead Center", font: font(27, weight: .semibold), color: soft, x: half * 1.5, y: h - 62, centered: true, in: ctx)
+        draw("500 words a minute", font: font(19), color: quiet, x: half * 1.5, y: h - 94, centered: true, in: ctx)
 
         let slowDone = started && t >= slow.end
         let fastDone = started && t >= fast.end
         page.draw(current: started && !slowDone ? index(at: t, in: slow.starts) : nil, style: .eye, in: ctx)
         if started && !fastDone {
-            drawFocusWord(bare(paragraph[index(at: t, in: fast.starts)]), size: 54, x: half * 1.5, baseline: h / 2 - 22, in: ctx)
+            drawFocusWord(bare(paragraph[index(at: t, in: fast.starts)]), size: 66, x: half * 1.5, baseline: h / 2 - 30, in: ctx)
         } else if fastDone {
-            draw("Done", font: font(46, weight: .semibold), color: ink, x: half * 1.5, y: h / 2 - 22, centered: true, in: ctx)
+            draw("Done", font: font(56, weight: .semibold), color: ink, x: half * 1.5, y: h / 2 - 30, centered: true, in: ctx)
         }
 
-        let timer = monospaced(19)
+        let timer = monospaced(24)
         draw(slowDone ? "Done in \(clock(slow.end))" : clock(started ? t : 0), font: timer, color: slowDone ? soft : quiet,
              x: half / 2, y: 44, centered: true, in: ctx)
         draw(fastDone ? "Done in \(clock(fast.end))" : clock(started ? t : 0), font: timer, color: fastDone ? red : quiet,
@@ -290,7 +290,7 @@ do {
         let next = i + 1 < times.count ? times[i + 1] : t + 4
         frames.append((frame(at: t, started: true), next - t))
     }
-    writeGIF(frames, to: docs.appendingPathComponent("compare.gif"))
+    writeGIF(frames, to: docs.appendingPathComponent("two-ways.gif"))
 }
 
 // MARK: - Speeds
@@ -300,38 +300,38 @@ let speedWords = words(speedText)
 
 // The first rung is ordinary reading, on a page.
 do {
-    let width = 1200, height = 280
-    let page = Page(speedText, font: font(30, weight: .regular), width: 900, left: 150, top: 82, lineHeight: 46,
+    let width = 1200, height = 300
+    let page = Page(speedText, font: font(40, weight: .regular), width: 1000, left: 100, top: 66, lineHeight: 60,
                     canvasHeight: CGFloat(height))
     let plan = schedule(speedWords, wpm: 240, paced: false)
     var frames: [(CGImage, Double)] = []
     for (i, start) in plan.starts.enumerated() {
         let ctx = context(width: width, height: height)
         page.draw(current: i, style: .eye, in: ctx)
-        draw("240 wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: ctx)
+        draw("240 wpm", font: font(22), color: quiet, x: CGFloat(width) / 2, y: 30, centered: true, in: ctx)
         let end = i + 1 < plan.starts.count ? plan.starts[i + 1] : plan.end
         frames.append((ctx.makeImage()!, end - start))
     }
     let rest = context(width: width, height: height)
     page.draw(current: nil, style: .eye, in: rest)
-    draw("240 wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: rest)
+    draw("240 wpm", font: font(22), color: quiet, x: CGFloat(width) / 2, y: 30, centered: true, in: rest)
     frames.append((rest.makeImage()!, 1.4))
-    writeGIF(frames, to: docs.appendingPathComponent("speed-240.gif"))
+    writeGIF(frames, to: docs.appendingPathComponent("pace-240.gif"))
 }
 
 for wpm in [450, 700, 1000] {
-    let width = 1200, height = 280
+    let width = 1200, height = 300
     var frames: [(CGImage, Double)] = []
     for word in speedWords {
         let ctx = context(width: width, height: height)
-        drawFocusWord(bare(word), size: 78, x: CGFloat(width) / 2, baseline: CGFloat(height) / 2 - 12, in: ctx)
-        draw("\(wpm) wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: ctx)
+        drawFocusWord(bare(word), size: 92, x: CGFloat(width) / 2, baseline: CGFloat(height) / 2 - 10, in: ctx)
+        draw("\(wpm) wpm", font: font(22), color: quiet, x: CGFloat(width) / 2, y: 30, centered: true, in: ctx)
         frames.append((ctx.makeImage()!, duration(of: word, wpm: Double(wpm))))
     }
     let rest = context(width: width, height: height)
-    draw("\(wpm) wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: rest)
+    draw("\(wpm) wpm", font: font(22), color: quiet, x: CGFloat(width) / 2, y: 30, centered: true, in: rest)
     frames.append((rest.makeImage()!, 1.4))
-    writeGIF(frames, to: docs.appendingPathComponent("speed-\(wpm).gif"))
+    writeGIF(frames, to: docs.appendingPathComponent("pace-\(wpm).gif"))
 }
 
 // MARK: - Page mode
@@ -342,8 +342,8 @@ in red, moving at your speed. Your eyes follow it without hunting for their plac
 line at a time.
 """
 do {
-    let width = 1200, height = 250
-    let page = Page(pageText, font: font(27, weight: .regular), width: 960, left: 120, top: 58, lineHeight: 44,
+    let width = 1200, height = 320
+    let page = Page(pageText, font: font(33, weight: .regular), width: 1040, left: 80, top: 56, lineHeight: 52,
                     canvasHeight: CGFloat(height))
     let plan = schedule(words(pageText), wpm: 350, paced: true)
     var frames: [(CGImage, Double)] = []
@@ -356,5 +356,5 @@ do {
     let rest = context(width: width, height: height)
     page.draw(current: nil, style: .page, in: rest)
     frames.append((rest.makeImage()!, 1.6))
-    writeGIF(frames, to: docs.appendingPathComponent("page-mode.gif"))
+    writeGIF(frames, to: docs.appendingPathComponent("page.gif"))
 }
