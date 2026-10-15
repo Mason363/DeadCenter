@@ -16,6 +16,18 @@ public enum IngestInput: Sendable {
     case web(URL)
     /// Encoded image bytes to OCR.
     case image(Data)
+    /// Photos or scans of printed pages (textbooks, papers): straightened, OCR'd into
+    /// paragraphs, with figures, captions and display equations kept as images.
+    case scan(ScanSource)
+}
+
+/// Pages for `IngestInput.scan`.
+public enum ScanSource: Sendable {
+    /// Encoded photos or scans (JPEG, HEIC, PNG, TIFF), one page each, in order.
+    case images([Data])
+    /// An image file (every page of a multi-page TIFF) or a PDF. A PDF with a real text layer
+    /// on most pages is read as an ordinary PDF.
+    case file(URL)
 }
 
 public enum IngestError: LocalizedError, Sendable {

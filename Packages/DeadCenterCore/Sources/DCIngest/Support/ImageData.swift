@@ -4,7 +4,7 @@ import ImageIO
 import UniformTypeIdentifiers
 import DCModel
 
-/// ImageIO helpers: probing, decoding, and PNG encoding.
+/// ImageIO helpers: probing, decoding, and PNG and JPEG encoding.
 enum ImageData {
     /// Images smaller than this on either side are decorations, spacers, or tracking pixels.
     static let minimumSide = 48
@@ -53,6 +53,14 @@ enum ImageData {
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { return nil }
         CGImageDestinationAddImage(dest, image, nil)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return data as Data
+    }
+
+    static func jpegData(_ image: CGImage, quality: CGFloat) -> Data? {
+        let data = NSMutableData()
+        guard let dest = CGImageDestinationCreateWithData(data, UTType.jpeg.identifier as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
         guard CGImageDestinationFinalize(dest) else { return nil }
         return data as Data
     }

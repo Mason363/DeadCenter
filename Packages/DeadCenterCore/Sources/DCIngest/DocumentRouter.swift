@@ -26,6 +26,8 @@ enum DocumentRouter {
             }
         case .image(let data):
             try ImageReader.read(data: data, into: emitter)
+        case .scan(let source):
+            try await PageScanReader.read(source, into: emitter)
         }
     }
 
@@ -107,7 +109,7 @@ enum DocumentRouter {
         return try Data(contentsOf: url, options: .mappedIfSafe)
     }
 
-    private static func sniffedFormat(of url: URL) -> DocumentFormat? {
+    static func sniffedFormat(of url: URL) -> DocumentFormat? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let head = try? handle.read(upToCount: 4096), !head.isEmpty else { return nil }
