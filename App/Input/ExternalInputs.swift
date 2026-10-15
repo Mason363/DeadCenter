@@ -22,7 +22,7 @@ final class ServicesProvider: NSObject {
     }
 }
 
-/// Picks up pages and selections the browser extensions drop into the shared App Group inbox.
+/// Picks up what the browser extensions and AI assistants drop into the shared App Group inbox.
 final class InboxWatcher {
     static let shared = InboxWatcher()
     private var source: DispatchSourceFileSystemObject?
@@ -47,34 +47,54 @@ final class InboxWatcher {
             guard let payload = try? Inbox.take(url) else { continue }
             // Ignore anything stale (e.g. sent while the app wasn't running, long ago).
             guard payload.kind != .hello, Date().timeIntervalSince(payload.sentAt) < 300 else { continue }
-            newest = payload
+            if payload.later == true {
+                // Saved for later: every one goes to the Library, none interrupts.
+                if let request = Self.request(for: payload) { ReadingCoordinator.shared.saveForLater(request) }
+            } else {
+                newest = payload
+            }
         }
         if let newest { read(newest) }
     }
 
     private func read(_ payload: InboxPayload) {
-        let coordinator = ReadingCoordinator.shared
+        if payload.kind == .file, let path = payload.path {
+            // Opening routes recordings to transcription and explains unsupported files.
+            return ReadingCoordinator.shared.open([URL(fileURLWithPath: path)])
+        }
+        if let request = Self.request(for: payload) { ReadingCoordinator.shared.read(request) }
+    }
+
+    /// What a payload asks to read.
+    static func request(for payload: InboxPayload) -> ReadRequest? {
         let url = payload.url.flatMap(URL.init(string:))
-        let browser = payload.browser?.capitalized
+        let source = payload.browser?.capitalized
+        func trimmed(_ text: String?) -> String? {
+            guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
         switch payload.kind {
         case .selection:
-            if let text = payload.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                coordinator.read(text: text, origin: .selection(app: browser))
-            } else if let html = payload.html {
-                coordinator.read(.html(html, baseURL: url, title: nil, origin: .selection(app: browser)))
-            }
+            if let text = trimmed(payload.text) { return .text(text, origin: .selection(app: source)) }
+            return payload.html.map { .html($0, baseURL: url, title: nil, origin: .selection(app: source)) }
         case .page:
             if let html = payload.html, !html.isEmpty {
-                coordinator.read(.html(html, baseURL: url, title: payload.title, origin: url.map(DocumentOrigin.web) ?? .text))
-            } else if let text = payload.text, !text.isEmpty {
+                return .html(html, baseURL: url, title: payload.title, origin: url.map(DocumentOrigin.web) ?? .text)
+            }
+            if let text = trimmed(payload.text) {
                 var request = ReadRequest.text(text, origin: url.map(DocumentOrigin.web) ?? .text, title: payload.title)
                 if let url { request.id = "web:" + ReadRequest.normalized(url) }
-                coordinator.read(request)
-            } else if let url {
-                coordinator.read(.web(url))
+                return request
             }
+            return url.map(ReadRequest.web)
+        case .text:
+            return trimmed(payload.text).map { .text($0, origin: .text, title: trimmed(payload.title)) }
+        case .file:
+            guard let path = payload.path else { return nil }
+            let file = URL(fileURLWithPath: path)
+            return Ingestor.canOpen(file) ? .file(file) : nil
         case .hello:
-            break
+            return nil
         }
     }
 }

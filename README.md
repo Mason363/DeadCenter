@@ -56,6 +56,7 @@ Your speed is a promise. Dead Center never goes faster than you set it. It only 
 - **Images.** The words in screenshots and photos.
 - **Textbooks and papers.** Photograph a page with your iPhone. Columns come out in order, and figures stay as pictures.
 - **Speech.** Meetings, lectures and recordings, transcribed on your Mac and ready to read.
+- **Your AI assistant.** Claude can send what it writes straight to Dead Center, to read now or save for later.
 
 ## Made to disappear
 
@@ -87,6 +88,15 @@ The shortcut works in every browser without an extension. With one, it reads the
 - **Chrome, Brave, Edge, Arc.** Turn on Developer mode on the page that opens, then drag in the `Chrome` folder that appears in Finder.
 - **Zen and Firefox.** In `about:config`, set `xpinstall.signatures.required` to `false`, then click Add.
 - **Safari.** Turn on Dead Center in Safari ▸ Settings ▸ Extensions.
+
+</details>
+
+<details>
+<summary><b>AI assistants</b> (optional)</summary>
+
+<br>
+
+In Dead Center, open Settings ▸ Assistants and click **Connect** next to Claude or Claude Code. Any other app that supports MCP can use the server command shown there. Assistants can only hand Dead Center something to read. They can't see your library.
 
 </details>
 

@@ -67,6 +67,7 @@ struct SettingsPane: Identifiable, Hashable {
             SettingsPane(id: "reading", title: "Reading", symbol: "text.alignleft") { AnyView(ReadingSettingsView()) },
             SettingsPane(id: "appearance", title: "Appearance", symbol: "paintpalette") { AnyView(AppearanceSettingsView()) },
             SettingsPane(id: "browsers", title: "Browsers", symbol: "globe") { AnyView(BrowsersSettingsView()) },
+            SettingsPane(id: "assistants", title: "Assistants", symbol: "sparkles") { AnyView(AssistantsSettingsView()) },
         ] + extras
     }
 }

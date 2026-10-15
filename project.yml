@@ -83,6 +83,11 @@ targets:
         codeSign: true
         copy:
           destination: executables
+      - target: dead-center-mcp
+        embed: true
+        codeSign: true
+        copy:
+          destination: executables
 
   DeadCenterSafariExtension:
     type: app-extension
@@ -146,6 +151,27 @@ targets:
       base:
         PRODUCT_NAME: dead-center-bridge
         PRODUCT_BUNDLE_IDENTIFIER: com.mason363.DeadCenter.Bridge
+        SKIP_INSTALL: YES
+    dependencies:
+      - package: DeadCenterCore
+        product: DCModel
+
+  dead-center-mcp:
+    type: tool
+    platform: macOS
+    sources:
+      - path: MCPServer
+        excludes:
+          - "*.entitlements"
+    entitlements:
+      path: MCPServer/MCPServer.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - 8GFSXN32MA.com.mason363.DeadCenter
+    settings:
+      base:
+        PRODUCT_NAME: dead-center-mcp
+        PRODUCT_BUNDLE_IDENTIFIER: com.mason363.DeadCenter.MCP
         SKIP_INSTALL: YES
     dependencies:
       - package: DeadCenterCore

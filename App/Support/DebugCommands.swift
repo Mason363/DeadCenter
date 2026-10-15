@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import SwiftUI
 
 /// `deadcenter://debug?cmd=…` — drives the reader in debug builds without synthesizing input.
 enum DebugCommands {
@@ -38,6 +39,33 @@ enum DebugCommands {
                 if path.lowercased().hasSuffix(".pdf") { ScanDraft.shared.add(pdf: data) } else { ScanDraft.shared.add(images: [data]) }
             }
         case "scanread": ScanDraft.shared.read()
+        case "mcpconnect":
+            if let client = value("client").flatMap(AssistantSetup.Client.init(rawValue:)) {
+                if value("off") == "1" { AssistantSetup.shared.disconnect(client) } else { AssistantSetup.shared.connect(client) }
+            }
+        case "renderpane":
+            // Renders a settings pane off screen, for checking its layout without showing a window.
+            if let out = value("out") {
+                let theme = SettingsTheme(Preferences.shared.palette(systemIsDark: true))
+                let pane = SettingsPane.all.first { $0.id == (value("id") ?? "general") } ?? SettingsPane.all[0]
+                let renderer = ImageRenderer(content: pane.content()
+                    .padding(28)
+                    .frame(width: 620)
+                    .background(theme.background)
+                    .environment(\.settingsTheme, theme)
+                    .environment(\.colorScheme, .dark))
+                renderer.scale = 2
+                if let image = renderer.nsImage, let tiff = image.tiffRepresentation,
+                   let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try? png.write(to: URL(fileURLWithPath: out))
+                }
+            }
+        case "mcpstatus":
+            AssistantSetup.shared.refresh()
+            if let out = value("out") {
+                let lines = AssistantSetup.Client.allCases.map { "\($0.rawValue): \(String(describing: AssistantSetup.shared.statuses[$0]))" }
+                try? lines.joined(separator: "\n").write(toFile: out, atomically: true, encoding: .utf8)
+            }
         case "dump":
             if let out = value("out"), let session {
                 var lines: [String] = []

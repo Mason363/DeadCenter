@@ -1,7 +1,8 @@
 import Foundation
 
-/// A reading handed to the app from outside its process: the browser native-messaging bridge
-/// or the Safari web extension. Delivered as a JSON file in the shared App Group inbox.
+/// A reading handed to the app from outside its process: the browser native-messaging bridge,
+/// the Safari web extension, or an AI assistant through the MCP server. Delivered as a JSON file
+/// in the shared App Group inbox.
 public struct InboxPayload: Codable, Sendable, Equatable {
     public enum Kind: String, Codable, Sendable {
         /// A whole article. `html` holds Readability's cleaned content; `text` is a fallback.
@@ -10,6 +11,10 @@ public struct InboxPayload: Codable, Sendable, Equatable {
         case selection
         /// The extension announcing it is installed and connected. Nothing to read.
         case hello
+        /// Text written for reading (an assistant's answer). Markdown and LaTeX are welcome.
+        case text
+        /// A local document; `path` holds it.
+        case file
     }
 
     public var kind: Kind
@@ -19,16 +24,23 @@ public struct InboxPayload: Codable, Sendable, Equatable {
     public var url: String?
     public var html: String?
     public var text: String?
+    /// For `file`: the document's absolute path.
+    public var path: String?
+    /// Save to the Library for later instead of opening the reader.
+    public var later: Bool?
     public var sentAt: Date
 
     public init(kind: Kind, browser: String? = nil, title: String? = nil, url: String? = nil,
-                html: String? = nil, text: String? = nil, sentAt: Date = Date()) {
+                html: String? = nil, text: String? = nil, path: String? = nil, later: Bool? = nil,
+                sentAt: Date = Date()) {
         self.kind = kind
         self.browser = browser
         self.title = title
         self.url = url
         self.html = html
         self.text = text
+        self.path = path
+        self.later = later
         self.sentAt = sentAt
     }
 }

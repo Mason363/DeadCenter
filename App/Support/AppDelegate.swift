@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         LibraryStore.shared.prune()
         AppHooks.didFinishLaunching()
         _ = Updater.shared
+        AssistantSetup.shared.refreshInstalledServer()
         warmUp()
 
         if !Preferences.shared.hasCompletedOnboarding {

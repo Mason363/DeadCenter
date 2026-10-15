@@ -14,6 +14,8 @@ final class ReadingCoordinator {
     private var request: ReadRequest?
     private let library = LibraryStore.shared
     private var lastSaved: CFTimeInterval = 0
+    /// Readings saved for later that are still being read in.
+    private var laterReadings: [String: LaterReading] = [:]
 
     init() {
         window.onClose = { [weak self] in self?.windowClosed() }
@@ -45,6 +47,29 @@ final class ReadingCoordinator {
         session.load(request.input, resumeAt: resume)
         if Preferences.shared.autoStart { session.play() }
         if resume != nil { window.readerView.flash("Resuming where you left off") }
+    }
+
+    /// Adds a reading to the Library without opening it (an assistant's "save for later"). It's read
+    /// in the background, so its card gets its title, preview and length.
+    func saveForLater(_ request: ReadRequest) {
+        // With history off there's nowhere to keep it: read it now instead.
+        guard Preferences.shared.rememberHistory else { return read(request) }
+        let isFile: Bool = { if case .file = request.origin { return true } else { return false } }()
+        let session = ReaderSession(id: request.id, title: isFile ? nil : request.title, origin: request.origin)
+        if isFile { session.setFallbackTitle(request.title ?? "") }
+        if case .text = request.stored { session.isEditable = true }
+        library.record(request, title: session.title)
+        laterReadings[request.id] = LaterReading(session) { [weak self] in self?.finishLater($0) }
+        session.load(request.input, resumeAt: nil)
+    }
+
+    private func finishLater(_ session: ReaderSession) {
+        laterReadings[session.id] = nil
+        // Opened in the meantime: the reader keeps the entry up to date itself.
+        guard self.session?.id != session.id else { return }
+        guard !session.stream.isEmpty else { return library.remove(id: session.id) }
+        library.updateProgress(id: session.id, title: session.title, position: 0, itemCount: session.stream.count,
+                               finished: false, wordCount: session.stream.wordCount, snippet: snippetFromStream(session))
     }
 
     func read(text: String, origin: DocumentOrigin = .text, title: String? = nil) {
@@ -214,5 +239,30 @@ final class ReadingCoordinator {
         if let session, session.id == "message" || session.id == "waiting" {
             self.session = nil
         }
+    }
+}
+
+/// Watches a reading saved for later until it has been read in, then reports it once.
+private final class LaterReading: ReaderSessionDelegate {
+    let session: ReaderSession
+    private var onDone: ((ReaderSession) -> Void)?
+
+    init(_ session: ReaderSession, onDone: @escaping (ReaderSession) -> Void) {
+        self.session = session
+        self.onDone = onDone
+        session.delegate = self
+        // A reading with nothing in it fails without telling the delegate.
+        session.onProgress = { [weak self] session in self?.check(session) }
+    }
+
+    func session(_ session: ReaderSession, didChange change: ReaderSession.Change) {
+        check(session)
+    }
+
+    private func check(_ session: ReaderSession) {
+        guard !session.isIngesting, session.state != .loading || session.stream.isEmpty else { return }
+        let done = onDone
+        onDone = nil
+        done?(session)
     }
 }
