@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Dead Center</title>
+  <link rel="icon" href="../icons/icon-32.png">
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <main>
+    <div class="reader" aria-hidden="true">
+      <span class="tick"></span>
+      <div class="word"><span class="before"></span><span class="pivot"></span><span class="after"></span></div>
+      <span class="tick"></span>
+    </div>
+
+    <section id="waiting">
+      <h1>Open Dead Center once.</h1>
+      <p>This button hands pages to the Dead Center app on your Mac. If it’s installed, open it once and it connects to this browser on its own. If it isn’t, download it first.</p>
+      <div class="actions">
+        <a class="primary" href="https://github.com/Mason363/DeadCenter/releases/latest" target="_blank" rel="noopener">Download Dead Center</a>
+        <button id="retry" type="button">Try Again</button>
+      </div>
+      <p id="detail" class="detail"></p>
+    </section>
+
+    <section id="connected" hidden>
+      <h1>Connected.</h1>
+      <p>Click the Dead Center button, or press <kbd>⌃</kbd><kbd>⇧</kbd><kbd>.</kbd>, on any page to read it. You can close this tab.</p>
+    </section>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

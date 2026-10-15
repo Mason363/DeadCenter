@@ -88,6 +88,8 @@ final class Preferences {
     var wpm: Int { didSet { defaults.set(wpm, forKey: Key.wpm) } }
     var pivotMode: PivotMode { didSet { defaults.set(pivotMode.rawValue, forKey: Key.pivotMode) } }
     var pacing: Pacing { didSet { defaults.set(pacing.rawValue, forKey: Key.pacing) } }
+    /// Adapt speed to the text: denser passages and harder documents read slower, easy ones faster.
+    var adaptiveSpeed: Bool { didSet { defaults.set(adaptiveSpeed, forKey: Key.adaptiveSpeed) } }
     var easeIn: Bool { didSet { defaults.set(easeIn, forKey: Key.easeIn) } }
     var resumeAtSentence: Bool { didSet { defaults.set(resumeAtSentence, forKey: Key.resumeAtSentence) } }
     var autoStart: Bool { didSet { defaults.set(autoStart, forKey: Key.autoStart) } }
@@ -127,6 +129,7 @@ final class Preferences {
             Key.wpm: 350,
             Key.pivotMode: PivotMode.optimal.rawValue,
             Key.pacing: Pacing.natural.rawValue,
+            Key.adaptiveSpeed: false,
             Key.easeIn: true,
             Key.resumeAtSentence: true,
             Key.autoStart: true,
@@ -150,6 +153,7 @@ final class Preferences {
         wpm = defaults.integer(forKey: Key.wpm)
         pivotMode = PivotMode(rawValue: defaults.string(forKey: Key.pivotMode) ?? "") ?? .optimal
         pacing = Pacing(rawValue: defaults.string(forKey: Key.pacing) ?? "") ?? .natural
+        adaptiveSpeed = defaults.bool(forKey: Key.adaptiveSpeed)
         easeIn = defaults.bool(forKey: Key.easeIn)
         resumeAtSentence = defaults.bool(forKey: Key.resumeAtSentence)
         autoStart = defaults.bool(forKey: Key.autoStart)
@@ -213,6 +217,7 @@ final class Preferences {
         static let wpm = "wpm"
         static let pivotMode = "pivotMode"
         static let pacing = "pacing"
+        static let adaptiveSpeed = "adaptiveSpeed"
         static let easeIn = "easeIn"
         static let resumeAtSentence = "resumeAtSentence"
         static let autoStart = "autoStart"

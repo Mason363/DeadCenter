@@ -6,45 +6,6 @@
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Dead Center</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>Dead Center</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>$(MARKETING_VERSION)</string>
-	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.productivity</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
-	<key>LSUIElement</key>
-	<true/>
-	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Mason Chen</string>
-	<key>NSPrincipalClass</key>
-	<string>NSApplication</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Dead Center asks your browser for the address of the page you're on, so it can read the article to you.</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.mason363.DeadCenter</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>deadcenter</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -72,28 +33,49 @@
 			</array>
 		</dict>
 	</array>
-	<key>UTImportedTypeDeclarations</key>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Dead Center</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>net.daringfireball.markdown</string>
-			<key>UTTypeDescription</key>
-			<string>Markdown Document</string>
-			<key>UTTypeConformsTo</key>
+			<key>CFBundleURLName</key>
+			<string>com.mason363.DeadCenter</string>
+			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>public.plain-text</string>
+				<string>deadcenter</string>
 			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>md</string>
-					<string>markdown</string>
-					<string>mdown</string>
-				</array>
-			</dict>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Dead Center asks your browser for the address of the page you're on, so it can read the article to you.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Dead Center captures system audio only while you transcribe, so voices from calls, meetings and videos become text on this Mac.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Mason Chen</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Dead Center listens to your microphone only while you transcribe, and turns speech into text on this Mac.</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 	<key>NSServices</key>
 	<array>
 		<dict>
@@ -139,11 +121,33 @@
 			</array>
 		</dict>
 	</array>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/Mason363/DeadCenter/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string></string>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<string>v7hdSqV92lab8k/rrg9bWJr7L1vdqLNZ28b3b3hn+5g=</string>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.plain-text</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Markdown Document</string>
+			<key>UTTypeIdentifier</key>
+			<string>net.daringfireball.markdown</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>md</string>
+					<string>markdown</string>
+					<string>mdown</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

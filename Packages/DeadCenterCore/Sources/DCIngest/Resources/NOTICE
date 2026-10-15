@@ -1,0 +1,9 @@
+Third-party components bundled with DCIngest
+============================================
+
+Readability.js and JSDOMParser.js
+  Source:  https://github.com/mozilla/readability (release tag 0.6.0), unmodified.
+  Readability.js: Copyright (c) 2010 Arc90 Inc, Apache License 2.0 (see Readability-LICENSE.md).
+  JSDOMParser.js: Mozilla Public License 2.0 (see the header of the file, https://mozilla.org/MPL/2.0/).
+
+  They run inside JavaScriptCore to reduce fetched web pages to their article content.

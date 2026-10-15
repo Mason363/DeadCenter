@@ -36,13 +36,45 @@ public enum IngestError: LocalizedError, Sendable {
 
 public enum Ingestor {
     /// Content types the app declares it can open (Open panel, Finder "Open With", drops).
-    public static var supportedContentTypes: [UTType] { [] }
+    public static var supportedContentTypes: [UTType] { DocumentFormat.contentTypes }
 
     /// Whether a file URL looks openable.
-    public static func canOpen(_ url: URL) -> Bool { false }
+    public static func canOpen(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        return DocumentFormat.declared(by: url) != nil
+    }
 
     /// Streams the input's content in reading order. Never blocks the caller; heavy work runs off the main thread.
     public static func ingest(_ input: IngestInput) -> AsyncThrowingStream<IngestEvent, Error> {
-        AsyncThrowingStream { $0.finish(throwing: IngestError.unsupported("these")) }
+        AsyncThrowingStream { continuation in
+            let task = Task.detached(priority: .userInitiated) {
+                let emitter = BlockEmitter(continuation)
+                do {
+                    try await DocumentRouter.route(input, into: emitter)
+                    try Task.checkCancellation()
+                    try emitter.finish()
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: Self.presentable(error))
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Maps lower-level failures to friendly `IngestError`s.
+    static func presentable(_ error: any Error) -> any Error {
+        switch error {
+        case is IngestError, is CancellationError:
+            return error
+        case let error as URLError:
+            return IngestError.network(error.localizedDescription)
+        case let error as CocoaError where error.code == .fileReadNoPermission:
+            return IngestError.unreadable("Dead Center doesn't have permission to open it.")
+        case let error as CocoaError where error.code == .fileReadNoSuchFile:
+            return IngestError.unreadable("the file couldn't be found.")
+        default:
+            return IngestError.unreadable(error.localizedDescription)
+        }
     }
 }

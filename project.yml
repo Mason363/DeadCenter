@@ -29,6 +29,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.6.0"
+  WhisperKit:
+    url: https://github.com/argmaxinc/WhisperKit
+    from: "0.9.0"
 
 targets:
   DeadCenter:
@@ -41,6 +44,11 @@ targets:
           - "Resources/*.entitlements"
     entitlements:
       path: App/Resources/DeadCenter.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - 8GFSXN32MA.com.mason363.DeadCenter
+        com.apple.security.automation.apple-events: true
+        com.apple.security.device.audio-input: true
     settings:
       base:
         PRODUCT_NAME: "Dead Center"
@@ -53,6 +61,10 @@ targets:
         SWIFT_APPROACHABLE_CONCURRENCY: YES
         COMBINE_HIDPI_IMAGES: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    preBuildScripts:
+      - name: Embed Browser Extensions
+        script: '"$SRCROOT/Scripts/build-extensions.sh" --embed "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Extensions"'
+        basedOnDependencyAnalysis: false
     dependencies:
       - package: DeadCenterCore
         product: DCModel
@@ -62,6 +74,7 @@ targets:
         product: DCIngest
       - package: KeyboardShortcuts
       - package: Sparkle
+      - package: WhisperKit
       - target: DeadCenterSafariExtension
         embed: true
         codeSign: true
@@ -79,11 +92,32 @@ targets:
         excludes:
           - "Info.plist"
           - "*.entitlements"
-      - path: WebExtension
+      - path: NativeHost/IncomingMessage.swift
+      # Safari loads the web extension from the root of the appex's Resources, so WebExtension's
+      # entries are copied individually, with its subfolders kept as folders.
+      - path: WebExtension/manifest.json
+        buildPhase: resources
+      - path: WebExtension/background.js
+        buildPhase: resources
+      - path: WebExtension/content
         type: folder
         buildPhase: resources
+      - path: WebExtension/pages
+        type: folder
+        buildPhase: resources
+      - path: WebExtension/vendor
+        type: folder
+        buildPhase: resources
+      - path: WebExtension/icons
+        type: folder
+        buildPhase: resources
+        optional: true
     entitlements:
       path: SafariExtension/SafariExtension.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups:
+          - 8GFSXN32MA.com.mason363.DeadCenter
     settings:
       base:
         PRODUCT_NAME: "Dead Center Extension"
@@ -105,6 +139,9 @@ targets:
           - "*.entitlements"
     entitlements:
       path: NativeHost/Bridge.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - 8GFSXN32MA.com.mason363.DeadCenter
     settings:
       base:
         PRODUCT_NAME: dead-center-bridge
