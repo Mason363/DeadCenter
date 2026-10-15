@@ -1,9 +1,9 @@
-// Renders the README's reading demos with the reader's own rules: the focus letter centered
-// on the same pixel every frame, Spritz-style focus position, and pauses at punctuation.
+// Renders the README's demos with the reader's own rules: the focus letter centered on the same
+// pixel every frame, Spritz-style focus position, and pauses at punctuation.
 //
 //   swift Scripts/make-readme-gifs.swift
 //
-// Writes docs/reading.gif and docs/speed-*.gif.
+// Writes docs/compare.gif, docs/page-mode.gif and docs/speed-*.gif.
 
 import AppKit
 import CoreText
@@ -12,16 +12,11 @@ import UniformTypeIdentifiers
 
 let background = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
 let ink = CGColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 1)
-let dim = CGColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 0.32)
-let quiet = CGColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 0.38)
+let soft = CGColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 0.82)
+let dim = CGColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 0.36)
+let quiet = CGColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 0.42)
+let faint = CGColor(srgbRed: 0.93, green: 0.93, blue: 0.93, alpha: 0.12)
 let red = CGColor(srgbRed: 1, green: 0.231, blue: 0.188, alpha: 1)
-
-struct Canvas {
-    var width: Int
-    var height: Int
-    var fontSize: CGFloat
-    var label: String
-}
 
 // MARK: - Reading rules
 
@@ -59,10 +54,31 @@ func duration(of word: String, wpm: Double) -> Double {
     return base * (1 + extra)
 }
 
+/// Dead Center's focus view shows bare words: no quotes, brackets or dashes around them.
+func bare(_ word: String) -> String {
+    let wrappers = Set("\"'“”‘’()[]{}«»—–")
+    var chars = Array(word)
+    while let first = chars.first, wrappers.contains(first), chars.count > 1 { chars.removeFirst() }
+    var tail: [Character] = []
+    while let last = chars.last, chars.count > 1, wrappers.contains(last) || ".,;:!?…".contains(last) {
+        chars.removeLast()
+        if !wrappers.contains(last) { tail.insert(last, at: 0) }
+    }
+    return String(chars + tail)
+}
+
+func words(_ text: String) -> [String] {
+    text.split(whereSeparator: \.isWhitespace).map(String.init)
+}
+
 // MARK: - Drawing
 
 func font(_ size: CGFloat, weight: NSFont.Weight = .medium) -> CTFont {
     NSFont.systemFont(ofSize: size, weight: weight) as CTFont
+}
+
+func monospaced(_ size: CGFloat) -> CTFont {
+    NSFont.monospacedDigitSystemFont(ofSize: size, weight: .medium) as CTFont
 }
 
 struct Line {
@@ -71,98 +87,117 @@ struct Line {
     let pivotCenter: CGFloat
 }
 
-func typeset(_ word: String, size: CGFloat, color: CGColor, highlight: Bool) -> Line {
-    let text = NSMutableAttributedString(string: word, attributes: [
-        NSAttributedString.Key(kCTFontAttributeName as String): font(size),
+func typeset(_ text: String, font: CTFont, color: CGColor, highlight: Bool = false) -> Line {
+    let attributed = NSMutableAttributedString(string: text, attributes: [
+        NSAttributedString.Key(kCTFontAttributeName as String): font,
         NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
         NSAttributedString.Key(kCTLigatureAttributeName as String): 0,
     ])
-    guard !word.isEmpty else {
-        let line = CTLineCreateWithAttributedString(text)
-        return Line(line: line, width: 0, pivotCenter: 0)
+    guard !text.isEmpty else {
+        return Line(line: CTLineCreateWithAttributedString(attributed), width: 0, pivotCenter: 0)
     }
-    let p = pivot(of: word)
-    let start = word.index(word.startIndex, offsetBy: p)
-    let range = NSRange(start..<word.index(after: start), in: word)
+    let p = pivot(of: text)
+    let start = text.index(text.startIndex, offsetBy: p)
+    let range = NSRange(start..<text.index(after: start), in: text)
     if highlight {
-        text.addAttribute(NSAttributedString.Key(kCTForegroundColorAttributeName as String), value: red, range: range)
+        attributed.addAttribute(NSAttributedString.Key(kCTForegroundColorAttributeName as String), value: red, range: range)
     }
-    let line = CTLineCreateWithAttributedString(text)
+    let line = CTLineCreateWithAttributedString(attributed)
     let width = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     let a = CTLineGetOffsetForStringIndex(line, range.location, nil)
     let b = CTLineGetOffsetForStringIndex(line, range.location + range.length, nil)
     return Line(line: line, width: width, pivotCenter: (a + b) / 2)
 }
 
-func context(_ canvas: Canvas) -> CGContext {
-    let ctx = CGContext(data: nil, width: canvas.width, height: canvas.height, bitsPerComponent: 8, bytesPerRow: 0,
+func context(width: Int, height: Int) -> CGContext {
+    let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                         space: CGColorSpace(name: CGColorSpace.sRGB)!,
                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     ctx.setFillColor(background)
-    ctx.fill(CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+    ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
     ctx.textMatrix = .identity
     return ctx
 }
 
-func baseline(_ canvas: Canvas) -> CGFloat {
-    let cap = CTFontGetCapHeight(font(canvas.fontSize))
-    return (CGFloat(canvas.height) / 2 - cap / 2 + CGFloat(canvas.height) * 0.04).rounded()
-}
-
-func drawLabel(_ text: String, in ctx: CGContext, canvas: Canvas) {
-    guard !text.isEmpty else { return }
-    let size = canvas.fontSize * 0.2
-    let line = typeset(text, size: size, color: quiet, highlight: false)
-    let attributed = NSAttributedString(string: text, attributes: [
-        NSAttributedString.Key(kCTFontAttributeName as String): font(size, weight: .medium),
-        NSAttributedString.Key(kCTForegroundColorAttributeName as String): quiet,
-    ])
-    let plain = CTLineCreateWithAttributedString(attributed)
-    ctx.textPosition = CGPoint(x: (CGFloat(canvas.width) - line.width) / 2, y: size * 1.6)
-    CTLineDraw(plain, ctx)
-}
-
-/// One word, its focus letter on the center line.
-func frame(_ word: String, canvas: Canvas) -> CGImage {
-    let ctx = context(canvas)
-    let line = typeset(word, size: canvas.fontSize, color: ink, highlight: true)
-    ctx.textPosition = CGPoint(x: CGFloat(canvas.width) / 2 - line.pivotCenter, y: baseline(canvas))
+/// Draws `text` with its left edge at `x`, or centered on `x`, on the baseline `y`.
+func draw(_ text: String, font: CTFont, color: CGColor, x: CGFloat, y: CGFloat, centered: Bool = false, in ctx: CGContext) {
+    let line = typeset(text, font: font, color: color)
+    ctx.textPosition = CGPoint(x: centered ? x - line.width / 2 : x, y: y)
     CTLineDraw(line.line, ctx)
-    drawLabel(canvas.label, in: ctx, canvas: canvas)
-    return ctx.makeImage()!
 }
 
-/// Paused: the sentence around the current word, fading out toward the edges.
-func ribbon(_ words: [String], current: Int, canvas: Canvas) -> CGImage {
-    let ctx = context(canvas)
-    let y = baseline(canvas)
-    let space = typeset(" ", size: canvas.fontSize, color: dim, highlight: false).width
-    let center = typeset(words[current], size: canvas.fontSize, color: ink, highlight: true)
-    var x = CGFloat(canvas.width) / 2 - center.pivotCenter
-    ctx.textPosition = CGPoint(x: x, y: y)
-    CTLineDraw(center.line, ctx)
-    var right = x + center.width
-    for word in words[(current + 1)...] {
-        let line = typeset(word, size: canvas.fontSize, color: dim, highlight: false)
-        ctx.textPosition = CGPoint(x: right + space, y: y)
-        CTLineDraw(line.line, ctx)
-        right += space + line.width
+/// One RSVP word with its focus letter on `x`.
+func drawFocusWord(_ word: String, size: CGFloat, x: CGFloat, baseline: CGFloat, in ctx: CGContext) {
+    guard !word.isEmpty else { return }
+    let line = typeset(word, font: font(size), color: ink, highlight: true)
+    ctx.textPosition = CGPoint(x: x - line.pivotCenter, y: baseline)
+    CTLineDraw(line.line, ctx)
+}
+
+/// A paragraph laid out as on a page, word by word, so one word can be marked.
+struct Page {
+    struct Placed {
+        let word: String
+        let x: CGFloat
+        let baseline: CGFloat
+        let width: CGFloat
     }
-    for word in words[..<current].reversed() {
-        let line = typeset(word, size: canvas.fontSize, color: dim, highlight: false)
-        x -= space + line.width
-        ctx.textPosition = CGPoint(x: x, y: y)
-        CTLineDraw(line.line, ctx)
+
+    let words: [Placed]
+    let font: CTFont
+    let lineHeight: CGFloat
+
+    init(_ text: String, font: CTFont, width: CGFloat, left: CGFloat, top: CGFloat, lineHeight: CGFloat, canvasHeight: CGFloat) {
+        self.font = font
+        self.lineHeight = lineHeight
+        let space = typeset(" ", font: font, color: ink).width
+        var placed: [Placed] = []
+        var x: CGFloat = 0
+        var row = 0
+        for word in DeadCenterReadme.words(text) {
+            let w = typeset(word, font: font, color: ink).width
+            if x > 0, x + w > width {
+                row += 1
+                x = 0
+            }
+            let baseline = canvasHeight - top - CGFloat(row) * lineHeight - CTFontGetAscent(font)
+            placed.append(Placed(word: word, x: left + x, baseline: baseline, width: w))
+            x += w + space
+        }
+        words = placed
     }
-    // Fade the edges into the background.
-    let fade = CGFloat(canvas.width) * 0.16
-    let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
-                              colors: [background, background.copy(alpha: 0)!] as CFArray, locations: [0, 1])!
-    ctx.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: fade, y: 0), options: [])
-    ctx.drawLinearGradient(gradient, start: CGPoint(x: CGFloat(canvas.width), y: 0),
-                           end: CGPoint(x: CGFloat(canvas.width) - fade, y: 0), options: [])
-    drawLabel(canvas.label, in: ctx, canvas: canvas)
-    return ctx.makeImage()!
+
+    /// The page with word `current` marked: lit in red (page mode) or held by the eye (ordinary reading).
+    func draw(current: Int?, style: Style, in ctx: CGContext) {
+        for (i, word) in words.enumerated() {
+            let isCurrent = i == current
+            if isCurrent, style == .eye {
+                let pad: CGFloat = 5
+                let rect = CGRect(x: word.x - pad, y: word.baseline - CTFontGetDescent(font) - 3,
+                                  width: word.width + pad * 2, height: CTFontGetAscent(font) + CTFontGetDescent(font) + 6)
+                ctx.setFillColor(faint)
+                ctx.addPath(CGPath(roundedRect: rect, cornerWidth: 6, cornerHeight: 6, transform: nil))
+                ctx.fillPath()
+            }
+            let color: CGColor = switch style {
+            case .eye: isCurrent ? ink : dim
+            case .page: isCurrent ? red : soft
+            }
+            ctx.textPosition = CGPoint(x: word.x, y: word.baseline)
+            CTLineDraw(typeset(word.word, font: font, color: color).line, ctx)
+        }
+    }
+
+    enum Style { case eye, page }
+}
+
+enum DeadCenterReadme {
+    static func words(_ text: String) -> [String] { text.split(whereSeparator: \.isWhitespace).map(String.init) }
+}
+
+func clock(_ seconds: Double) -> String {
+    let s = Int(seconds)
+    return String(format: "%d:%02d", s / 60, s % 60)
 }
 
 func writeGIF(_ frames: [(CGImage, Double)], to url: URL) {
@@ -172,9 +207,10 @@ func writeGIF(_ frames: [(CGImage, Double)], to url: URL) {
         kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0],
     ] as CFDictionary)
     for (image, seconds) in frames {
+        // Browsers honor delays in hundredths of a second, down to 0.02.
+        let delay = max((seconds * 100).rounded() / 100, 0.02)
         CGImageDestinationAddImage(destination, image, [
-            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: seconds,
-                                            kCGImagePropertyGIFUnclampedDelayTime: seconds],
+            kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay, kCGImagePropertyGIFUnclampedDelayTime: delay],
         ] as CFDictionary)
     }
     CGImageDestinationFinalize(destination)
@@ -182,42 +218,143 @@ func writeGIF(_ frames: [(CGImage, Double)], to url: URL) {
     print("\(url.lastPathComponent): \(frames.count) frames, \(size / 1024) KB")
 }
 
-func words(_ text: String) -> [String] {
-    text.split(whereSeparator: \.isWhitespace).map(String.init)
+/// Start times of each word, and when the last one is done.
+func schedule(_ words: [String], wpm: Double, paced: Bool) -> (starts: [Double], end: Double) {
+    var t = 0.0
+    var starts: [Double] = []
+    for word in words {
+        starts.append(t)
+        t += paced ? duration(of: word, wpm: wpm) : 60 / wpm
+    }
+    return (starts, t)
+}
+
+func index(at t: Double, in starts: [Double]) -> Int {
+    starts.lastIndex { $0 <= t + 1e-9 } ?? 0
 }
 
 let docs = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("docs")
 
-// MARK: - Hero
+// MARK: - Side by side
 
-let hero = Canvas(width: 1440, height: 420, fontSize: 112, label: "")
-let heroText = """
-This is Dead Center. Words come to you, one at a time, and the red letter never moves. \
-Your eyes stay still, so nothing is spent jumping across lines. You just read, faster and calmer. \
-Pause, and the whole sentence is there.
+// The same paragraph read the usual way at the average adult's pace, and in Dead Center at 500 wpm.
+let compareText = """
+Reading feels effortless, but your eyes are working hard. They jump from word to word several times a \
+second, and every jump costs a little time. Dead Center brings each word to the same spot, so your eyes \
+can rest and your mind does the reading. Most people are surprised how quickly it starts to feel natural.
 """
-var heroFrames: [(CGImage, Double)] = []
-let heroWords = words(heroText)
-for word in heroWords {
-    heroFrames.append((frame(word, canvas: hero), duration(of: word, wpm: 330)))
+do {
+    let width = 1200, height = 500
+    let half = CGFloat(width) / 2
+    let paragraph = words(compareText)
+    let slow = schedule(paragraph, wpm: 240, paced: false)
+    let fast = schedule(paragraph.map(bare), wpm: 500, paced: true)
+    let page = Page(compareText, font: font(21, weight: .regular), width: half - 84, left: 44, top: 150,
+                    lineHeight: 33, canvasHeight: CGFloat(height))
+
+    func frame(at t: Double, started: Bool) -> CGImage {
+        let ctx = context(width: width, height: height)
+        let h = CGFloat(height)
+        ctx.setFillColor(faint)
+        ctx.fill(CGRect(x: half - 0.5, y: 56, width: 1, height: h - 112))
+
+        draw("Reading the usual way", font: font(21, weight: .semibold), color: soft, x: half / 2, y: h - 58, centered: true, in: ctx)
+        draw("240 words a minute, the average adult", font: font(15), color: quiet, x: half / 2, y: h - 84, centered: true, in: ctx)
+        draw("Dead Center", font: font(21, weight: .semibold), color: soft, x: half * 1.5, y: h - 58, centered: true, in: ctx)
+        draw("500 words a minute", font: font(15), color: quiet, x: half * 1.5, y: h - 84, centered: true, in: ctx)
+
+        let slowDone = started && t >= slow.end
+        let fastDone = started && t >= fast.end
+        page.draw(current: started && !slowDone ? index(at: t, in: slow.starts) : nil, style: .eye, in: ctx)
+        if started && !fastDone {
+            drawFocusWord(bare(paragraph[index(at: t, in: fast.starts)]), size: 54, x: half * 1.5, baseline: h / 2 - 22, in: ctx)
+        } else if fastDone {
+            draw("Done", font: font(46, weight: .semibold), color: ink, x: half * 1.5, y: h / 2 - 22, centered: true, in: ctx)
+        }
+
+        let timer = monospaced(19)
+        draw(slowDone ? "Done in \(clock(slow.end))" : clock(started ? t : 0), font: timer, color: slowDone ? soft : quiet,
+             x: half / 2, y: 44, centered: true, in: ctx)
+        draw(fastDone ? "Done in \(clock(fast.end))" : clock(started ? t : 0), font: timer, color: fastDone ? red : quiet,
+             x: half * 1.5, y: 44, centered: true, in: ctx)
+        return ctx.makeImage()!
+    }
+
+    // A frame wherever anything changes: either side's word, or a clock second.
+    var events = Set<Double>()
+    for s in slow.starts + fast.starts + [slow.end, fast.end] { events.insert((s * 50).rounded() / 50) }
+    for second in 0...Int(slow.end) { events.insert(Double(second)) }
+    let times = events.sorted()
+    var frames: [(CGImage, Double)] = [(frame(at: 0, started: false), 1.2)]
+    for (i, t) in times.enumerated() {
+        let next = i + 1 < times.count ? times[i + 1] : t + 4
+        frames.append((frame(at: t, started: true), next - t))
+    }
+    writeGIF(frames, to: docs.appendingPathComponent("compare.gif"))
 }
-// End on the paused view of the last sentence.
-let lastSentence = words("Pause, and the whole sentence is there.")
-heroFrames.append((ribbon(lastSentence, current: 3, canvas: hero), 3.2))
-writeGIF(heroFrames, to: docs.appendingPathComponent("reading.gif"))
 
 // MARK: - Speeds
 
-let speedText = """
-Most people read about 240 words a minute. Dead Center lets you go further, \
-and keeps every word in exactly the same place.
-"""
-for (wpm, label) in [(250, "250 wpm"), (450, "450 wpm"), (700, "700 wpm")] {
-    let canvas = Canvas(width: 1200, height: 280, fontSize: 84, label: label)
+let speedText = "Read this at your usual pace. Now picture reading it twice as fast and still catching every word."
+let speedWords = words(speedText)
+
+// The first rung is ordinary reading, on a page.
+do {
+    let width = 1200, height = 280
+    let page = Page(speedText, font: font(30, weight: .regular), width: 900, left: 150, top: 82, lineHeight: 46,
+                    canvasHeight: CGFloat(height))
+    let plan = schedule(speedWords, wpm: 240, paced: false)
     var frames: [(CGImage, Double)] = []
-    for word in words(speedText) {
-        frames.append((frame(word, canvas: canvas), duration(of: word, wpm: Double(wpm))))
+    for (i, start) in plan.starts.enumerated() {
+        let ctx = context(width: width, height: height)
+        page.draw(current: i, style: .eye, in: ctx)
+        draw("240 wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: ctx)
+        let end = i + 1 < plan.starts.count ? plan.starts[i + 1] : plan.end
+        frames.append((ctx.makeImage()!, end - start))
     }
-    frames.append((frame("", canvas: canvas), 1.2))
+    let rest = context(width: width, height: height)
+    page.draw(current: nil, style: .eye, in: rest)
+    draw("240 wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: rest)
+    frames.append((rest.makeImage()!, 1.4))
+    writeGIF(frames, to: docs.appendingPathComponent("speed-240.gif"))
+}
+
+for wpm in [450, 700, 1000] {
+    let width = 1200, height = 280
+    var frames: [(CGImage, Double)] = []
+    for word in speedWords {
+        let ctx = context(width: width, height: height)
+        drawFocusWord(bare(word), size: 78, x: CGFloat(width) / 2, baseline: CGFloat(height) / 2 - 12, in: ctx)
+        draw("\(wpm) wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: ctx)
+        frames.append((ctx.makeImage()!, duration(of: word, wpm: Double(wpm))))
+    }
+    let rest = context(width: width, height: height)
+    draw("\(wpm) wpm", font: font(16), color: quiet, x: CGFloat(width) / 2, y: 26, centered: true, in: rest)
+    frames.append((rest.makeImage()!, 1.4))
     writeGIF(frames, to: docs.appendingPathComponent("speed-\(wpm).gif"))
+}
+
+// MARK: - Page mode
+
+let pageText = """
+Prefer to see the whole page? Page mode keeps your paragraphs where they are and lights the word you're on \
+in red, moving at your speed. Your eyes follow it without hunting for their place, and the page glides up a \
+line at a time.
+"""
+do {
+    let width = 1200, height = 250
+    let page = Page(pageText, font: font(27, weight: .regular), width: 960, left: 120, top: 58, lineHeight: 44,
+                    canvasHeight: CGFloat(height))
+    let plan = schedule(words(pageText), wpm: 350, paced: true)
+    var frames: [(CGImage, Double)] = []
+    for (i, start) in plan.starts.enumerated() {
+        let ctx = context(width: width, height: height)
+        page.draw(current: i, style: .page, in: ctx)
+        let end = i + 1 < plan.starts.count ? plan.starts[i + 1] : plan.end
+        frames.append((ctx.makeImage()!, end - start))
+    }
+    let rest = context(width: width, height: height)
+    page.draw(current: nil, style: .page, in: rest)
+    frames.append((rest.makeImage()!, 1.6))
+    writeGIF(frames, to: docs.appendingPathComponent("page-mode.gif"))
 }
